@@ -342,26 +342,54 @@ class GridTradingBot:
         }
 
 # CLI Menu Functions
+def get_input(prompt: str) -> str:
+    """在任何环境下都能工作的输入函数"""
+    while True:
+        try:
+            # 首先尝试直接打印提示
+            sys.stdout.write(prompt)
+            sys.stdout.flush()
+            
+            # 直接从stdin读取
+            line = sys.stdin.readline()
+            if not line:  # EOF
+                raise EOFError
+                
+            return line.strip()
+            
+        except (EOFError, KeyboardInterrupt):
+            # 如果发生EOF，尝试重新打开标准输入
+            try:
+                sys.stdin = open('/dev/tty')
+                continue
+            except:
+                # 如果无法重新打开，退出程序
+                print("\n\n检测到输入流关闭，正在尝试重新连接...")
+                try:
+                    # 最后尝试使用Python内置input
+                    return input(prompt).strip()
+                except:
+                    print("\n无法获取用户输入，程序退出")
+                    sys.exit(1)
+
 def clear_screen():
-    os.system('cls' if os.name == 'nt' else 'clear')
+    """清理屏幕的函数"""
+    try:
+        if os.name == 'nt':  # Windows
+            os.system('cls')
+        else:  # Linux/Mac
+            os.system('clear')
+    except:
+        # 如果清屏失败，打印换行符
+        print('\n' * 100)
 
 def print_header():
+    """打印头部信息"""
     clear_screen()
     print("=" * 50)
     print("Backpack 网格交易机器人管理系统")
     print("=" * 50)
     print()
-
-def get_input(prompt: str) -> str:
-    """安全的输入函数，处理EOF和其他输入异常"""
-    try:
-        return input(prompt).strip()
-    except EOFError:
-        print("\n检测到输入流关闭")
-        sys.exit(0)
-    except KeyboardInterrupt:
-        print("\n程序被用户中断")
-        sys.exit(0)
 
 def configure_api_keys():
     print_header()
@@ -411,9 +439,14 @@ def configure_trading_params() -> Optional[GridConfig]:
         return None
 
 async def main_menu():
+    """主菜单函数"""
+    # 初始化环境
     load_dotenv()
     bot = None
     config = None
+    
+    # 确保工作目录存在
+    os.makedirs(os.path.expanduser("~/backpack-grid-bot"), exist_ok=True)
     
     while True:
         try:
@@ -426,7 +459,13 @@ async def main_menu():
             print("6. 退出程序")
             print()
             
-            choice = get_input("请输入您的选择 (1-6): ")
+            try:
+                choice = get_input("请输入您的选择 (1-6): ")
+                if not choice:  # 如果输入为空，重试
+                    continue
+            except Exception as e:
+                logger.error(f"输入错误: {e}")
+                continue
             
             if choice == "1":
                 if configure_api_keys():
@@ -490,25 +529,30 @@ async def main_menu():
         except Exception as e:
             logger.error(f"菜单操作出错: {str(e)}")
             print(f"\n❌ 发生错误: {str(e)}")
-            get_input("\n按回车键继续...")
+            try:
+                get_input("\n按回车键继续...")
+            except:
+                print("\n程序遇到严重错误，即将退出...")
+                break
 
 if __name__ == "__main__":
     try:
-        # 确保终端处于正确的模式
-        if os.name == 'posix':  # Linux/Unix系统
-            try:
-                import tty
-                import termios
-                tty.setraw(sys.stdin.fileno())
-                termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, termios.tcgetattr(sys.stdin.fileno()))
-            except:
-                pass
+        # 设置日志文件路径
+        log_dir = os.path.expanduser("~/backpack-grid-bot")
+        os.makedirs(log_dir, exist_ok=True)
+        logger.add(os.path.join(log_dir, "grid_bot.log"), level="INFO")
         
+        # 运行主程序
         asyncio.run(main_menu())
     except KeyboardInterrupt:
         print("\n\n程序已被用户中断，正在安全退出...")
     except EOFError:
-        print("\n\n检测到输入流关闭，正在安全退出...")
+        print("\n\n检测到输入流关闭，正在尝试恢复...")
+        try:
+            sys.stdin = open('/dev/tty')
+            print("输入流已恢复，请重新运行程序")
+        except:
+            print("无法恢复输入流，程序退出")
     except Exception as e:
         print(f"\n\n程序运行出错：{str(e)}")
         logger.exception("程序异常退出")
