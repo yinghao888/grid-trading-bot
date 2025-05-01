@@ -272,6 +272,11 @@ main_menu() {
         
         read -p "请输入您的选择 (1-6): " choice
         
+        # 如果choice为空，直接继续循环
+        if [ -z "$choice" ]; then
+            continue
+        fi
+        
         case $choice in
             1) configure_api_keys ;;
             2) configure_trading_params ;;
