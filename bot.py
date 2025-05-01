@@ -415,6 +415,20 @@ def configure_trading_params() -> Optional[GridConfig]:
         get_input("\n按回车键继续...")
         return None
 
+def wait_for_input():
+    """等待用户输入"""
+    while True:
+        try:
+            sys.stdout.write("请输入您的选择 (1-6): ")
+            sys.stdout.flush()
+            choice = sys.stdin.read(1)
+            if choice:
+                return choice
+            time.sleep(0.1)
+        except:
+            time.sleep(0.1)
+            continue
+
 async def main_menu():
     """主菜单函数"""
     load_dotenv()
@@ -422,90 +436,99 @@ async def main_menu():
     config = None
     
     while True:
-        print_header()
-        print("1. 配置 API 密钥")
-        print("2. 配置交易参数")
-        print("3. 启动机器人")
-        print("4. 停止机器人")
-        print("5. 显示统计信息")
-        print("6. 退出程序")
-        print()
-        
-        choice = get_input("请输入您的选择 (1-6): ")
-        if not choice:  # 如果输入为空，继续等待
-            continue
+        try:
+            print_header()
+            print("1. 配置 API 密钥")
+            print("2. 配置交易参数")
+            print("3. 启动机器人")
+            print("4. 停止机器人")
+            print("5. 显示统计信息")
+            print("6. 退出程序")
+            print()
             
-        if choice == "1":
-            if configure_api_keys():
-                print("API 密钥已更新")
-                
-        elif choice == "2":
-            config = configure_trading_params()
-            if config:
-                bot = GridTradingBot(config)
-                print("交易参数已更新")
-                
-        elif choice == "3":
-            if not os.getenv("BACKPACK_API_KEY") or not os.getenv("BACKPACK_API_SECRET"):
-                print("\n❌ 错误：请先配置 API 密钥！")
-                get_input("\n按回车键继续...")
-                continue
-                
-            if not config or not bot:
-                print("\n❌ 错误：请先配置交易参数！")
-                get_input("\n按回车键继续...")
-                continue
-                
-            print("\n正在启动机器人...")
-            await bot.initialize()
-            await bot.start()
-            print("✅ 机器人已启动！")
-            get_input("\n按回车键继续...")
+            choice = wait_for_input()
+            print()  # 换行
             
-        elif choice == "4":
-            if bot and bot.is_running:
-                print("\n正在停止机器人...")
-                await bot.stop()
-                print("✅ 机器人已停止！")
-            else:
-                print("\n❌ 错误：机器人未在运行！")
-            get_input("\n按回车键继续...")
-            
-        elif choice == "5":
-            if bot:
-                stats = bot.get_stats()
-                print("\n统计信息:")
-                print(f"总收益: {stats['total_profit']:.4f} USDC")
-                print(f"交易次数: {stats['trades_count']}")
-                print(f"当前价格: {stats['current_price']:.2f} USDC")
-                print(f"运行状态: {'运行中' if stats['is_running'] else '已停止'}")
-            else:
-                print("\n❌ 错误：机器人未初始化！")
-            get_input("\n按回车键继续...")
-            
-        elif choice == "6":
-            confirm = get_input("\n确认要退出吗？(y/n): ").lower()
-            if confirm == 'y':
-                if bot:
+            if choice == "1":
+                if configure_api_keys():
+                    print("API 密钥已更新")
+                    
+            elif choice == "2":
+                config = configure_trading_params()
+                if config:
+                    bot = GridTradingBot(config)
+                    print("交易参数已更新")
+                    
+            elif choice == "3":
+                if not os.getenv("BACKPACK_API_KEY") or not os.getenv("BACKPACK_API_SECRET"):
+                    print("\n❌ 错误：请先配置 API 密钥！")
+                    time.sleep(2)
+                    continue
+                    
+                if not config or not bot:
+                    print("\n❌ 错误：请先配置交易参数！")
+                    time.sleep(2)
+                    continue
+                    
+                print("\n正在启动机器人...")
+                await bot.initialize()
+                await bot.start()
+                print("✅ 机器人已启动！")
+                time.sleep(2)
+                
+            elif choice == "4":
+                if bot and bot.is_running:
+                    print("\n正在停止机器人...")
                     await bot.stop()
-                    await bot.api.close()
-                print("\n感谢使用！再见！")
-                break
+                    print("✅ 机器人已停止！")
+                else:
+                    print("\n❌ 错误：机器人未在运行！")
+                time.sleep(2)
+                
+            elif choice == "5":
+                if bot:
+                    stats = bot.get_stats()
+                    print("\n统计信息:")
+                    print(f"总收益: {stats['total_profit']:.4f} USDC")
+                    print(f"交易次数: {stats['trades_count']}")
+                    print(f"当前价格: {stats['current_price']:.2f} USDC")
+                    print(f"运行状态: {'运行中' if stats['is_running'] else '已停止'}")
+                else:
+                    print("\n❌ 错误：机器人未初始化！")
+                time.sleep(3)
+                
+            elif choice == "6":
+                sys.stdout.write("\n确认要退出吗？(y/n): ")
+                sys.stdout.flush()
+                confirm = sys.stdin.read(1)
+                if confirm.lower() == 'y':
+                    if bot:
+                        await bot.stop()
+                        await bot.api.close()
+                    print("\n感谢使用！再见！")
+                    break
+                print()
             
-        else:
-            print("\n❌ 无效的选择，请重试！")
-            get_input("\n按回车键继续...")
+            else:
+                print("\n❌ 无效的选择，请重试！")
+                time.sleep(1)
+                
+        except Exception as e:
+            logger.error(f"菜单操作出错: {str(e)}")
+            print(f"\n❌ 发生错误: {str(e)}")
+            time.sleep(2)
 
 if __name__ == "__main__":
-    try:
-        # 运行主程序
-        asyncio.run(main_menu())
-    except KeyboardInterrupt:
-        print("\n\n程序已被用户中断")
-    except Exception as e:
-        print(f"\n\n程序运行出错：{str(e)}")
-        logger.exception("程序异常退出")
-    finally:
-        if 'bot' in locals() and bot and bot.is_running:
-            asyncio.run(bot.stop())
-        print("\n感谢使用！再见！") 
+    while True:  # 添加无限循环
+        try:
+            # 运行主程序
+            asyncio.run(main_menu())
+            break  # 如果正常退出，则跳出循环
+        except KeyboardInterrupt:
+            print("\n\n程序已被用户中断")
+            break
+        except Exception as e:
+            print(f"\n\n程序运行出错：{str(e)}")
+            logger.exception("程序异常退出")
+            time.sleep(2)
+            continue  # 发生错误时继续循环 
