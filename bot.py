@@ -138,29 +138,34 @@ class BackpackAPI:
         
     async def start_ws_price_stream(self):
         async def _connect():
-            self.ws = await websockets.connect(WS_URL)
-            await self.ws.send(json.dumps({
-                "type": "subscribe",
-                "channel": "ticker",
-                "market": "all"
-            }))
-            
-            while True:
-                try:
-                    message = await self.ws.recv()
-                    data = json.loads(message)
-                    
-                    if data.get("type") == "ticker":
-                        symbol = data["market"]
-                        price = float(data["last"])
-                        self.prices[symbol] = price
+            try:
+                self.ws = await websockets.connect(WS_URL)
+                await self.ws.send(json.dumps({
+                    "type": "subscribe",
+                    "channel": "ticker",
+                    "market": "all"
+                }))
+                
+                while True:
+                    try:
+                        message = await self.ws.recv()
+                        data = json.loads(message)
                         
-                        for callback in self._price_callbacks:
-                            await callback(symbol, price)
-                except Exception as e:
-                    logger.error(f"WebSocket error: {e}")
-                    await asyncio.sleep(5)
-                    await _connect()
+                        if data.get("type") == "ticker":
+                            symbol = data["market"]
+                            price = float(data["last"])
+                            self.prices[symbol] = price
+                            
+                            for callback in self._price_callbacks:
+                                await callback(symbol, price)
+                    except Exception as e:
+                        logger.error(f"WebSocket数据处理错误: {e}")
+                        await asyncio.sleep(5)
+                        await _connect()
+            except Exception as e:
+                logger.error(f"WebSocket连接失败: {e}")
+                await asyncio.sleep(5)
+                await _connect()
                     
         asyncio.create_task(_connect())
         
@@ -250,18 +255,18 @@ class GridTradingBot:
                 
                 if unrealized_pnl < -self.config.total_investment * self.config.stop_loss_pct:
                     await self._close_all_positions()
-                    logger.warning(f"Stop loss triggered at {price}")
+                    logger.warning(f"触发止损，当前价格: {price}")
                     return
                     
                 if unrealized_pnl > self.config.total_investment * self.config.take_profit_pct:
                     await self._close_all_positions()
-                    logger.info(f"Take profit triggered at {price}")
+                    logger.info(f"触发止盈，当前价格: {price}")
                     return
                     
             await self._update_grid_orders(price)
             
         except Exception as e:
-            logger.error(f"Error handling price update: {e}")
+            logger.error(f"处理价格更新时出错: {e}")
             
     async def _update_grid_orders(self, current_price: float):
         try:
@@ -273,7 +278,7 @@ class GridTradingBot:
                 if abs(price - current_price) / current_price > self.config.grid_spread * 2:
                     await self.api.cancel_order(self.config.symbol, order_id)
                     del self.active_orders[order_id]
-                    logger.info(f"Cancelled order at {price}")
+                    logger.info(f"已取消订单，价格: {price}")
                     
             if closest_above and not any(o["price"] == closest_above for o in self.active_orders.values()):
                 await self._place_grid_orders()
@@ -282,7 +287,7 @@ class GridTradingBot:
                 await self._place_grid_orders()
                 
         except Exception as e:
-            logger.error(f"Error updating grid orders: {e}")
+            logger.error(f"更新网格订单时出错: {e}")
             
     async def _close_all_positions(self):
         try:
@@ -303,13 +308,13 @@ class GridTradingBot:
                     reduce_only=True
                 )
                 
-            logger.info("Closed all positions and cancelled all orders")
+            logger.info("已关闭所有持仓并取消所有订单")
             
         except Exception as e:
-            logger.error(f"Error closing positions: {e}")
+            logger.error(f"关闭持仓时出错: {e}")
             
     async def start(self):
-        logger.info("Starting grid trading bot...")
+        logger.info("正在启动网格交易机器人...")
         self.is_running = True
         await self.initialize()
         
@@ -317,14 +322,14 @@ class GridTradingBot:
             while self.is_running:
                 await asyncio.sleep(1)
         except KeyboardInterrupt:
-            logger.info("Stopping grid trading bot...")
+            logger.info("正在停止网格交易机器人...")
             await self.stop()
             
     async def stop(self):
         self.is_running = False
         await self._close_all_positions()
         await self.api.close()
-        logger.info("Grid trading bot stopped")
+        logger.info("网格交易机器人已停止")
         
     def get_stats(self) -> dict:
         return {
@@ -474,9 +479,11 @@ if __name__ == "__main__":
     try:
         asyncio.run(main_menu())
     except KeyboardInterrupt:
-        print("\n\n程序已被用户中断。正在安全退出...")
+        print("\n\n程序已被用户中断，正在安全退出...")
+    except EOFError:
+        print("\n\n检测到输入流关闭，正在安全退出...")
     except Exception as e:
-        print(f"\n\n发生错误：{str(e)}")
+        print(f"\n\n程序运行出错：{str(e)}")
         logger.exception("程序异常退出")
     finally:
         print("\n感谢使用！再见！") 
