@@ -343,45 +343,15 @@ class GridTradingBot:
 
 # CLI Menu Functions
 def get_input(prompt: str) -> str:
-    """在任何环境下都能工作的输入函数"""
-    while True:
-        try:
-            # 首先尝试直接打印提示
-            sys.stdout.write(prompt)
-            sys.stdout.flush()
-            
-            # 直接从stdin读取
-            line = sys.stdin.readline()
-            if not line:  # EOF
-                raise EOFError
-                
-            return line.strip()
-            
-        except (EOFError, KeyboardInterrupt):
-            # 如果发生EOF，尝试重新打开标准输入
-            try:
-                sys.stdin = open('/dev/tty')
-                continue
-            except:
-                # 如果无法重新打开，退出程序
-                print("\n\n检测到输入流关闭，正在尝试重新连接...")
-                try:
-                    # 最后尝试使用Python内置input
-                    return input(prompt).strip()
-                except:
-                    print("\n无法获取用户输入，程序退出")
-                    sys.exit(1)
+    """简单的输入函数"""
+    try:
+        return input(prompt).strip()
+    except (EOFError, KeyboardInterrupt):
+        sys.exit(0)
 
 def clear_screen():
-    """清理屏幕的函数"""
-    try:
-        if os.name == 'nt':  # Windows
-            os.system('cls')
-        else:  # Linux/Mac
-            os.system('clear')
-    except:
-        # 如果清屏失败，打印换行符
-        print('\n' * 100)
+    """清理屏幕"""
+    os.system('cls' if os.name == 'nt' else 'clear')
 
 def print_header():
     """打印头部信息"""
@@ -440,119 +410,87 @@ def configure_trading_params() -> Optional[GridConfig]:
 
 async def main_menu():
     """主菜单函数"""
-    # 初始化环境
     load_dotenv()
     bot = None
     config = None
     
-    # 确保工作目录存在
-    os.makedirs(os.path.expanduser("~/backpack-grid-bot"), exist_ok=True)
-    
     while True:
-        try:
-            print_header()
-            print("1. 配置 API 密钥")
-            print("2. 配置交易参数")
-            print("3. 启动机器人")
-            print("4. 停止机器人")
-            print("5. 显示统计信息")
-            print("6. 退出程序")
-            print()
-            
-            try:
-                choice = get_input("请输入您的选择 (1-6): ")
-                if not choice:  # 如果输入为空，重试
-                    continue
-            except Exception as e:
-                logger.error(f"输入错误: {e}")
+        print_header()
+        print("1. 配置 API 密钥")
+        print("2. 配置交易参数")
+        print("3. 启动机器人")
+        print("4. 停止机器人")
+        print("5. 显示统计信息")
+        print("6. 退出程序")
+        print()
+        
+        choice = get_input("请输入您的选择 (1-6): ")
+        
+        if choice == "1":
+            if configure_api_keys():
+                print("API 密钥已更新")
+                
+        elif choice == "2":
+            config = configure_trading_params()
+            if config:
+                bot = GridTradingBot(config)
+                print("交易参数已更新")
+                
+        elif choice == "3":
+            if not os.getenv("BACKPACK_API_KEY") or not os.getenv("BACKPACK_API_SECRET"):
+                print("\n❌ 错误：请先配置 API 密钥！")
+                get_input("\n按回车键继续...")
                 continue
+                
+            if not config or not bot:
+                print("\n❌ 错误：请先配置交易参数！")
+                get_input("\n按回车键继续...")
+                continue
+                
+            print("\n正在启动机器人...")
+            await bot.initialize()
+            await bot.start()
+            print("✅ 机器人已启动！")
+            get_input("\n按回车键继续...")
             
-            if choice == "1":
-                if configure_api_keys():
-                    print("API 密钥已更新")
-                    
-            elif choice == "2":
-                config = configure_trading_params()
-                if config:
-                    bot = GridTradingBot(config)
-                    print("交易参数已更新")
-                    
-            elif choice == "3":
-                if not os.getenv("BACKPACK_API_KEY") or not os.getenv("BACKPACK_API_SECRET"):
-                    print("\n❌ 错误：请先配置 API 密钥！")
-                    get_input("\n按回车键继续...")
-                    continue
-                    
-                if not config or not bot:
-                    print("\n❌ 错误：请先配置交易参数！")
-                    get_input("\n按回车键继续...")
-                    continue
-                    
-                print("\n正在启动机器人...")
-                await bot.initialize()
-                await bot.start()
-                print("✅ 机器人已启动！")
-                get_input("\n按回车键继续...")
-                
-            elif choice == "4":
-                if bot and bot.is_running:
-                    print("\n正在停止机器人...")
-                    await bot.stop()
-                    print("✅ 机器人已停止！")
-                else:
-                    print("\n❌ 错误：机器人未在运行！")
-                get_input("\n按回车键继续...")
-                
-            elif choice == "5":
-                if bot:
-                    stats = bot.get_stats()
-                    print("\n统计信息:")
-                    print(f"总收益: {stats['total_profit']:.4f} USDC")
-                    print(f"交易次数: {stats['trades_count']}")
-                    print(f"当前价格: {stats['current_price']:.2f} USDC")
-                    print(f"运行状态: {'运行中' if stats['is_running'] else '已停止'}")
-                else:
-                    print("\n❌ 错误：机器人未初始化！")
-                get_input("\n按回车键继续...")
-                
-            elif choice == "6":
-                if bot:
-                    await bot.stop()
-                    await bot.api.close()
-                print("\n感谢使用！再见！")
-                break
-                
+        elif choice == "4":
+            if bot and bot.is_running:
+                print("\n正在停止机器人...")
+                await bot.stop()
+                print("✅ 机器人已停止！")
             else:
-                print("\n❌ 无效的选择，请重试！")
-                get_input("\n按回车键继续...")
-                
-        except Exception as e:
-            logger.error(f"菜单操作出错: {str(e)}")
-            print(f"\n❌ 发生错误: {str(e)}")
-            try:
-                get_input("\n按回车键继续...")
-            except:
-                print("\n程序遇到严重错误，即将退出...")
-                break
+                print("\n❌ 错误：机器人未在运行！")
+            get_input("\n按回车键继续...")
+            
+        elif choice == "5":
+            if bot:
+                stats = bot.get_stats()
+                print("\n统计信息:")
+                print(f"总收益: {stats['total_profit']:.4f} USDC")
+                print(f"交易次数: {stats['trades_count']}")
+                print(f"当前价格: {stats['current_price']:.2f} USDC")
+                print(f"运行状态: {'运行中' if stats['is_running'] else '已停止'}")
+            else:
+                print("\n❌ 错误：机器人未初始化！")
+            get_input("\n按回车键继续...")
+            
+        elif choice == "6":
+            if bot:
+                await bot.stop()
+                await bot.api.close()
+            print("\n感谢使用！再见！")
+            break
+            
+        else:
+            print("\n❌ 无效的选择，请重试！")
+            get_input("\n按回车键继续...")
 
 if __name__ == "__main__":
     try:
-        # 设置日志文件路径
-        log_dir = os.path.expanduser("~/backpack-grid-bot")
-        os.makedirs(log_dir, exist_ok=True)
-        logger.add(os.path.join(log_dir, "grid_bot.log"), level="INFO")
-        
         # 运行主程序
         asyncio.run(main_menu())
     except KeyboardInterrupt:
-        print("\n\n程序已被用户中断，正在安全退出...")
-    except EOFError:
-        print("\n\n检测到输入流关闭，正在尝试恢复...")
-        try:
-            sys.stdin = open('/dev/tty')
-            print("输入流已恢复，请重新运行程序")
-        except:
-            print("无法恢复输入流，程序退出")
+        print("\n\n程序已被用户中断")
     except Exception as e:
         print(f"\n\n程序运行出错：{str(e)}")
         logger.exception("程序异常退出")
