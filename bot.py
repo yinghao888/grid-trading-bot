@@ -88,7 +88,7 @@ class BackpackAPI:
             async with self.session.request(method, url, headers=headers, json=data) as response:
                 return await response.json()
         except Exception as e:
-            logger.error(f"API request failed: {e}")
+            logger.error(f"API 请求失败: {e}")
             raise
             
     async def get_price(self, symbol: str) -> float:
@@ -187,7 +187,7 @@ class GridTradingBot:
     async def initialize(self):
         try:
             self.initial_price = await self.api.get_price(self.config.symbol)
-            logger.info(f"Initial price for {self.config.symbol}: {self.initial_price}")
+            logger.info(f"交易对 {self.config.symbol} 的初始价格: {self.initial_price}")
             
             if not self.config.upper_price:
                 self.config.upper_price = self.initial_price * 1.1
@@ -205,7 +205,7 @@ class GridTradingBot:
             await self._place_grid_orders()
             
         except Exception as e:
-            logger.error(f"Initialization error: {e}")
+            logger.error(f"初始化错误: {e}")
             raise
             
     async def _place_grid_orders(self):
@@ -234,10 +234,10 @@ class GridTradingBot:
                     "quantity": quantity
                 }
                 
-                logger.info(f"Placed {side} order at {price}")
+                logger.info(f"已下{side}单，价格: {price}")
                 
             except Exception as e:
-                logger.error(f"Error placing grid order at {price}: {e}")
+                logger.error(f"下单错误，价格 {price}: {e}")
                 
     async def _on_price_update(self, symbol: str, price: float):
         if symbol != self.config.symbol or not self.is_running:
@@ -332,7 +332,8 @@ class GridTradingBot:
             "trades_count": self.trades_count,
             "active_orders": len(self.active_orders),
             "grid_levels": len(self.grid_prices),
-            "current_price": self.api.prices.get(self.config.symbol, 0)
+            "current_price": self.api.prices.get(self.config.symbol, 0),
+            "is_running": self.is_running
         }
 
 # CLI Menu Functions
@@ -342,41 +343,38 @@ def clear_screen():
 def print_header():
     clear_screen()
     print("=" * 50)
-    print("Backpack Grid Trading Bot Manager")
+    print("Backpack 网格交易机器人管理系统")
     print("=" * 50)
     print()
 
 def configure_api_keys():
     print_header()
-    print("Configure API Keys")
-    print("-" * 20)
+    print("配置 API 密钥\n")
     
-    api_key = input("Enter your Backpack API Key: ").strip()
-    api_secret = input("Enter your Backpack API Secret: ").strip()
+    api_key = input("请输入您的 API Key: ").strip()
+    api_secret = input("请输入您的 API Secret: ").strip()
     
-    env_path = os.path.join(os.path.dirname(__file__), '.env')
-    if not os.path.exists(env_path):
-        with open(env_path, 'w') as f:
-            f.write("")
-    
-    set_key(env_path, "BACKPACK_API_KEY", api_key)
-    set_key(env_path, "BACKPACK_API_SECRET", api_secret)
-    
-    print("\nAPI keys have been saved successfully!")
-    input("\nPress Enter to continue...")
+    if not api_key or not api_secret:
+        print("\n错误：API Key 和 Secret 不能为空！")
+        return False
+        
+    set_key(".env", "BACKPACK_API_KEY", api_key)
+    set_key(".env", "BACKPACK_API_SECRET", api_secret)
+    print("\n✅ API 密钥配置成功！")
+    input("\n按回车键继续...")
+    return True
 
 def configure_trading_params() -> Optional[GridConfig]:
     print_header()
-    print("Configure Trading Parameters")
-    print("-" * 20)
+    print("配置交易参数\n")
     
     try:
-        symbol = input("Enter trading pair (default: BTC_USDC_PERP): ").strip() or "BTC_USDC_PERP"
-        grid_num = int(input("Enter number of grid levels (default: 10): ").strip() or "10")
-        total_investment = float(input("Enter total investment in USDC (default: 1000): ").strip() or "1000")
-        grid_spread = float(input("Enter grid spread percentage (default: 2): ").strip() or "2") / 100
-        stop_loss_pct = float(input("Enter stop loss percentage (default: 10): ").strip() or "10") / 100
-        take_profit_pct = float(input("Enter take profit percentage (default: 20): ").strip() or "20") / 100
+        symbol = input("交易对 (默认: BTC_USDC_PERP): ").strip() or "BTC_USDC_PERP"
+        grid_num = int(input("网格数量 (默认: 10): ").strip() or "10")
+        total_investment = float(input("总投资额 USDC (默认: 1000): ").strip() or "1000")
+        grid_spread = float(input("网格间距 % (默认: 2): ").strip() or "2") / 100
+        stop_loss_pct = float(input("止损百分比 % (默认: 10): ").strip() or "10") / 100
+        take_profit_pct = float(input("止盈百分比 % (默认: 20): ").strip() or "20") / 100
         
         config = GridConfig(
             symbol=symbol,
@@ -387,76 +385,98 @@ def configure_trading_params() -> Optional[GridConfig]:
             take_profit_pct=take_profit_pct
         )
         
-        print("\nTrading parameters have been saved successfully!")
-        input("\nPress Enter to continue...")
+        print("\n✅ 交易参数配置成功！")
+        input("\n按回车键继续...")
         return config
         
     except ValueError as e:
-        print(f"\nError: Invalid input - {e}")
-        input("\nPress Enter to continue...")
+        print(f"\n❌ 输入错误：{str(e)}")
+        input("\n按回车键继续...")
         return None
 
 async def main_menu():
-    bot: Optional[GridTradingBot] = None
-    config: Optional[GridConfig] = None
+    load_dotenv()
+    bot = None
+    config = None
     
     while True:
         print_header()
-        print("1. Configure API Keys")
-        print("2. Configure Trading Parameters")
-        print("3. Start Bot")
-        print("4. Stop Bot")
-        print("5. Show Statistics")
-        print("6. Exit")
+        print("1. 配置 API 密钥")
+        print("2. 配置交易参数")
+        print("3. 启动机器人")
+        print("4. 停止机器人")
+        print("5. 显示统计信息")
+        print("6. 退出程序")
         print()
         
-        choice = input("Enter your choice (1-6): ").strip()
+        choice = input("请输入您的选择 (1-6): ").strip()
         
         if choice == "1":
-            configure_api_keys()
+            if configure_api_keys():
+                print("API 密钥已更新")
+                
         elif choice == "2":
-            new_config = configure_trading_params()
-            if new_config:
-                config = new_config
+            config = configure_trading_params()
+            if config:
+                bot = GridTradingBot(config)
+                print("交易参数已更新")
+                
         elif choice == "3":
             if not os.getenv("BACKPACK_API_KEY") or not os.getenv("BACKPACK_API_SECRET"):
-                print("Error: API keys not configured!")
-                input("\nPress Enter to continue...")
+                print("\n❌ 错误：请先配置 API 密钥！")
+                input("\n按回车键继续...")
                 continue
                 
-            if not config:
-                config = GridConfig()
+            if not config or not bot:
+                print("\n❌ 错误：请先配置交易参数！")
+                input("\n按回车键继续...")
+                continue
                 
-            bot = GridTradingBot(config)
+            print("\n正在启动机器人...")
+            await bot.initialize()
             await bot.start()
+            print("✅ 机器人已启动！")
+            input("\n按回车键继续...")
+            
         elif choice == "4":
-            if bot:
+            if bot and bot.is_running:
+                print("\n正在停止机器人...")
                 await bot.stop()
-                bot = None
-                print("Bot stopped successfully!")
+                print("✅ 机器人已停止！")
             else:
-                print("Bot is not running!")
-            input("\nPress Enter to continue...")
+                print("\n❌ 错误：机器人未在运行！")
+            input("\n按回车键继续...")
+            
         elif choice == "5":
             if bot:
                 stats = bot.get_stats()
-                print(f"Total Profit: {stats['total_profit']:.2f} USDC")
-                print(f"Total Trades: {stats['trades_count']}")
-                print(f"Active Orders: {stats['active_orders']}")
-                print(f"Grid Levels: {stats['grid_levels']}")
-                print(f"Current Price: {stats['current_price']:.2f}")
+                print("\n统计信息:")
+                print(f"总收益: {stats['total_profit']:.4f} USDC")
+                print(f"交易次数: {stats['trades_count']}")
+                print(f"当前价格: {stats['current_price']:.2f} USDC")
+                print(f"运行状态: {'运行中' if stats['is_running'] else '已停止'}")
             else:
-                print("Bot is not running!")
-            input("\nPress Enter to continue...")
+                print("\n❌ 错误：机器人未初始化！")
+            input("\n按回车键继续...")
+            
         elif choice == "6":
             if bot:
                 await bot.stop()
-            print("\nGoodbye!")
-            sys.exit(0)
+                await bot.api.close()
+            print("\n感谢使用！再见！")
+            break
+            
         else:
-            print("\nInvalid choice! Please try again.")
-            input("\nPress Enter to continue...")
+            print("\n❌ 无效的选择，请重试！")
+            input("\n按回车键继续...")
 
 if __name__ == "__main__":
-    load_dotenv()
-    asyncio.run(main_menu()) 
+    try:
+        asyncio.run(main_menu())
+    except KeyboardInterrupt:
+        print("\n\n程序已被用户中断。正在安全退出...")
+    except Exception as e:
+        print(f"\n\n发生错误：{str(e)}")
+        logger.exception("程序异常退出")
+    finally:
+        print("\n感谢使用！再见！") 
