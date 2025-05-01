@@ -415,28 +415,19 @@ def configure_trading_params() -> Optional[GridConfig]:
         get_input("\n按回车键继续...")
         return None
 
-def wait_for_input():
-    """等待用户输入"""
-    while True:
-        try:
-            sys.stdout.write("请输入您的选择 (1-6): ")
-            sys.stdout.flush()
-            choice = sys.stdin.read(1)
-            if choice:
-                return choice
-            time.sleep(0.1)
-        except:
-            time.sleep(0.1)
-            continue
-
-async def main_menu():
-    """主菜单函数"""
-    load_dotenv()
-    bot = None
-    config = None
+def run_menu():
+    """运行菜单的主函数"""
+    import select
     
-    while True:
-        try:
+    def is_input_available():
+        """检查是否有输入可用"""
+        return select.select([sys.stdin], [], [], 0.1)[0] != []
+    
+    async def menu_loop():
+        bot = None
+        config = None
+        
+        while True:
             print_header()
             print("1. 配置 API 密钥")
             print("2. 配置交易参数")
@@ -446,18 +437,28 @@ async def main_menu():
             print("6. 退出程序")
             print()
             
-            choice = wait_for_input()
-            print()  # 换行
+            sys.stdout.write("请输入您的选择 (1-6): ")
+            sys.stdout.flush()
+            
+            while not is_input_available():
+                time.sleep(0.1)
+            
+            try:
+                choice = sys.stdin.readline().strip()
+            except:
+                continue
             
             if choice == "1":
                 if configure_api_keys():
                     print("API 密钥已更新")
+                    time.sleep(1)
                     
             elif choice == "2":
                 config = configure_trading_params()
                 if config:
                     bot = GridTradingBot(config)
                     print("交易参数已更新")
+                    time.sleep(1)
                     
             elif choice == "3":
                 if not os.getenv("BACKPACK_API_KEY") or not os.getenv("BACKPACK_API_SECRET"):
@@ -500,35 +501,42 @@ async def main_menu():
             elif choice == "6":
                 sys.stdout.write("\n确认要退出吗？(y/n): ")
                 sys.stdout.flush()
-                confirm = sys.stdin.read(1)
-                if confirm.lower() == 'y':
-                    if bot:
-                        await bot.stop()
-                        await bot.api.close()
-                    print("\n感谢使用！再见！")
-                    break
-                print()
-            
+                
+                while not is_input_available():
+                    time.sleep(0.1)
+                
+                try:
+                    confirm = sys.stdin.readline().strip().lower()
+                    if confirm == 'y':
+                        if bot:
+                            await bot.stop()
+                            await bot.api.close()
+                        print("\n感谢使用！再见！")
+                        return
+                except:
+                    continue
+                
             else:
                 print("\n❌ 无效的选择，请重试！")
                 time.sleep(1)
-                
-        except Exception as e:
-            logger.error(f"菜单操作出错: {str(e)}")
-            print(f"\n❌ 发生错误: {str(e)}")
-            time.sleep(2)
 
 if __name__ == "__main__":
-    while True:  # 添加无限循环
-        try:
-            # 运行主程序
-            asyncio.run(main_menu())
-            break  # 如果正常退出，则跳出循环
-        except KeyboardInterrupt:
-            print("\n\n程序已被用户中断")
-            break
-        except Exception as e:
-            print(f"\n\n程序运行出错：{str(e)}")
-            logger.exception("程序异常退出")
-            time.sleep(2)
-            continue  # 发生错误时继续循环 
+    try:
+        # 确保标准输入是可读的
+        if not sys.stdin.isatty():
+            # 如果不是终端，尝试重新打开标准输入
+            try:
+                sys.stdin = open('/dev/tty')
+            except:
+                print("错误：无法访问终端。请确保在终端环境中运行此程序。")
+                sys.exit(1)
+        
+        # 运行主程序
+        asyncio.run(run_menu())
+    except KeyboardInterrupt:
+        print("\n\n程序已被用户中断")
+    except Exception as e:
+        print(f"\n\n程序运行出错：{str(e)}")
+        logger.exception("程序异常退出")
+    finally:
+        print("\n感谢使用！再见！") 
