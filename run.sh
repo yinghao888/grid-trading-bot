@@ -7,25 +7,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-print_color() {
-    printf "${1}%s${NC}\n" "${2}"
-}
-
 # 安装目录
-INSTALL_DIR="$HOME/backpack-grid-bot"
-
-# 创建一个独立的脚本文件，这个文件将包含主要的菜单系统
-create_main_script() {
-    cat > "$INSTALL_DIR/menu.sh" << 'EOL'
-#!/bin/bash
-
-# 颜色设置
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
 INSTALL_DIR="$HOME/backpack-grid-bot"
 
 print_color() {
@@ -36,243 +18,8 @@ clear_screen() {
     clear
 }
 
-print_header() {
-    clear_screen
-    echo "=================================================="
-    print_color $BLUE "Backpack 网格交易机器人管理系统"
-    echo "=================================================="
-    echo ""
-}
-
-configure_api_keys() {
-    print_header
-    print_color $YELLOW "配置 API 密钥"
-    echo ""
-    
-    read -p "请输入您的 API Key: " api_key
-    read -p "请输入您的 API Secret: " api_secret
-    
-    if [ -z "$api_key" ] || [ -z "$api_secret" ]; then
-        print_color $RED "错误：API Key 和 Secret 不能为空！"
-        read -n 1 -s -r -p "按任意键继续..."
-        return 1
-    fi
-    
-    # 保存到.env文件
-    echo "BACKPACK_API_KEY=$api_key" > "$INSTALL_DIR/.env"
-    echo "BACKPACK_API_SECRET=$api_secret" >> "$INSTALL_DIR/.env"
-    
-    print_color $GREEN "✅ API 密钥配置成功！"
-    read -n 1 -s -r -p "按任意键继续..."
-    return 0
-}
-
-configure_trading_params() {
-    print_header
-    print_color $YELLOW "配置交易参数"
-    echo ""
-    
-    read -p "交易对 (默认: BTC_USDC_PERP): " symbol
-    symbol=${symbol:-BTC_USDC_PERP}
-    
-    read -p "网格数量 (默认: 10): " grid_num
-    grid_num=${grid_num:-10}
-    
-    read -p "总投资额 USDC (默认: 1000): " total_investment
-    total_investment=${total_investment:-1000}
-    
-    read -p "网格间距 % (默认: 2): " grid_spread
-    grid_spread=${grid_spread:-2}
-    
-    read -p "止损百分比 % (默认: 10): " stop_loss
-    stop_loss=${stop_loss:-10}
-    
-    read -p "止盈百分比 % (默认: 20): " take_profit
-    take_profit=${take_profit:-20}
-    
-    # 保存到配置文件
-    echo "SYMBOL=$symbol" > "$INSTALL_DIR/config.txt"
-    echo "GRID_NUM=$grid_num" >> "$INSTALL_DIR/config.txt"
-    echo "TOTAL_INVESTMENT=$total_investment" >> "$INSTALL_DIR/config.txt"
-    echo "GRID_SPREAD=$grid_spread" >> "$INSTALL_DIR/config.txt"
-    echo "STOP_LOSS=$stop_loss" >> "$INSTALL_DIR/config.txt"
-    echo "TAKE_PROFIT=$take_profit" >> "$INSTALL_DIR/config.txt"
-    
-    print_color $GREEN "✅ 交易参数配置成功！"
-    read -n 1 -s -r -p "按任意键继续..."
-    return 0
-}
-
-start_bot() {
-    if [ ! -f "$INSTALL_DIR/.env" ]; then
-        print_color $RED "❌ 错误：请先配置 API 密钥！"
-        read -n 1 -s -r -p "按任意键继续..."
-        return 1
-    fi
-    
-    if [ ! -f "$INSTALL_DIR/config.txt" ]; then
-        print_color $RED "❌ 错误：请先配置交易参数！"
-        read -n 1 -s -r -p "按任意键继续..."
-        return 1
-    fi
-    
-    print_color $GREEN "正在启动机器人..."
-    cd "$INSTALL_DIR" || exit 1
-    source venv/bin/activate
-    
-    # 启动 Python 脚本
-    python3 -c "
-import asyncio
-import sys
-import os
-import importlib.util
-
-# 加载机器人模块
-spec = importlib.util.spec_from_file_location('bot_module', 'bot.py')
-bot_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(bot_module)
-
-# 读取配置
-config_file = 'config.txt'
-env_file = '.env'
-
-# 加载环境变量
-with open(env_file, 'r') as f:
-    for line in f:
-        if '=' in line:
-            key, value = line.strip().split('=', 1)
-            os.environ[key] = value
-
-# 读取交易配置
-config_values = {}
-with open(config_file, 'r') as f:
-    for line in f:
-        if '=' in line:
-            key, value = line.strip().split('=', 1)
-            config_values[key] = value
-
-# 创建配置
-config = bot_module.GridConfig(
-    symbol=config_values.get('SYMBOL', 'BTC_USDC_PERP'),
-    grid_num=int(config_values.get('GRID_NUM', '10')),
-    total_investment=float(config_values.get('TOTAL_INVESTMENT', '1000')),
-    grid_spread=float(config_values.get('GRID_SPREAD', '2'))/100,
-    stop_loss_pct=float(config_values.get('STOP_LOSS', '10'))/100,
-    take_profit_pct=float(config_values.get('TAKE_PROFIT', '20'))/100,
-)
-
-# 创建并启动机器人
-async def run_bot():
-    bot = bot_module.GridTradingBot(config)
-    await bot.initialize()
-    await bot.start()
-
-# 运行机器人
-try:
-    print('机器人已启动! 按Ctrl+C停止...')
-    asyncio.run(run_bot())
-except KeyboardInterrupt:
-    print('接收到停止信号，正在停止机器人...')
-except Exception as e:
-    print(f'发生错误: {e}')
-    raise
-" &
-
-    BOT_PID=$!
-    echo $BOT_PID > "$INSTALL_DIR/bot.pid"
-    print_color $GREEN "✅ 机器人已成功启动！(PID: $BOT_PID)"
-    read -n 1 -s -r -p "按任意键继续..."
-    return 0
-}
-
-stop_bot() {
-    if [ -f "$INSTALL_DIR/bot.pid" ]; then
-        BOT_PID=$(cat "$INSTALL_DIR/bot.pid")
-        if ps -p $BOT_PID > /dev/null; then
-            kill $BOT_PID
-            print_color $GREEN "✅ 机器人已停止！(PID: $BOT_PID)"
-        else
-            print_color $RED "❌ 机器人进程未运行！"
-        fi
-        rm "$INSTALL_DIR/bot.pid"
-    else
-        print_color $RED "❌ 机器人未启动！"
-    fi
-    read -n 1 -s -r -p "按任意键继续..."
-    return 0
-}
-
-show_stats() {
-    print_header
-    print_color $YELLOW "统计信息"
-    echo ""
-    
-    if [ ! -f "$INSTALL_DIR/bot.pid" ]; then
-        print_color $RED "❌ 机器人未启动，无法显示统计信息！"
-        read -n 1 -s -r -p "按任意键继续..."
-        return 1
-    fi
-    
-    BOT_PID=$(cat "$INSTALL_DIR/bot.pid")
-    if ! ps -p $BOT_PID > /dev/null; then
-        print_color $RED "❌ 机器人进程未运行！"
-        rm "$INSTALL_DIR/bot.pid"
-        read -n 1 -s -r -p "按任意键继续..."
-        return 1
-    fi
-    
-    print_color $GREEN "机器人正在运行 (PID: $BOT_PID)"
-    print_color $GREEN "查看日志文件获取更多信息: $INSTALL_DIR/grid_bot.log"
-    read -n 1 -s -r -p "按任意键继续..."
-    return 0
-}
-
-main_menu() {
-    while true; do
-        print_header
-        echo "1. 配置 API 密钥"
-        echo "2. 配置交易参数"
-        echo "3. 启动机器人"
-        echo "4. 停止机器人"
-        echo "5. 显示统计信息"
-        echo "6. 退出程序"
-        echo ""
-        
-        read -p "请输入您的选择 (1-6): " choice
-        
-        # 如果choice为空，直接继续循环
-        if [ -z "$choice" ]; then
-            continue
-        fi
-        
-        case $choice in
-            1) configure_api_keys ;;
-            2) configure_trading_params ;;
-            3) start_bot ;;
-            4) stop_bot ;;
-            5) show_stats ;;
-            6) 
-                print_color $GREEN "感谢使用！再见！"
-                exit 0
-                ;;
-            *)
-                print_color $RED "❌ 无效的选择，请重试！"
-                read -n 1 -s -r -p "按任意键继续..."
-                ;;
-        esac
-    done
-}
-
-# 启动主菜单
-main_menu
-EOL
-
-    # 使脚本可执行
-    chmod +x "$INSTALL_DIR/menu.sh"
-}
-
-# 下载及初始化环境
-initialize_environment() {
+# 安装基本依赖
+install() {
     # 验证脚本是否正确下载
     if [ "$(head -n1 $0)" = "404: Not Found" ]; then
         print_color $RED "错误：无法下载安装脚本。请检查仓库地址是否正确。"
@@ -300,54 +47,267 @@ initialize_environment() {
 
     # 安装依赖
     print_color $GREEN "正在安装依赖包..."
-    pip install --upgrade pip > /dev/null
-    pip install aiohttp==3.9.1 python-dotenv==1.0.0 websockets==12.0 pandas==2.1.4 numpy==1.26.2 loguru==0.7.2 > /dev/null
+    pip install --upgrade pip >/dev/null 2>&1
+    pip install aiohttp==3.9.1 python-dotenv==1.0.0 websockets==12.0 pandas==2.1.4 numpy==1.26.2 loguru==0.7.2 >/dev/null 2>&1
 
     # 下载机器人脚本
     print_color $GREEN "正在下载机器人脚本..."
     BOT_URL="https://raw.githubusercontent.com/yinghao888/grid-trading-bot/main/bot.py"
-    if ! curl -f -s "$BOT_URL" -o bot.py; then
+    if ! curl -f -s "$BOT_URL" -o "$INSTALL_DIR/grid_bot.py"; then
         print_color $RED "错误：无法从 $BOT_URL 下载机器人脚本"
         print_color $RED "请检查仓库是否存在且为公开仓库。"
         exit 1
     fi
 
     # 验证下载是否成功
-    if [ ! -s bot.py ]; then
-        print_color $RED "错误：下载的 bot.py 文件为空。安装失败。"
+    if [ ! -s "$INSTALL_DIR/grid_bot.py" ]; then
+        print_color $RED "错误：下载的 grid_bot.py 文件为空。安装失败。"
         exit 1
     fi
 
-    # 创建主菜单脚本
-    create_main_script
+    # 创建启动脚本
+    cat > "$INSTALL_DIR/simple_bot.py" << 'EOF'
+#!/usr/bin/env python3
+import os
+import sys
+import json
+import asyncio
+import importlib.util
+from pathlib import Path
+
+# 加载grid_bot.py模块
+bot_path = Path(__file__).parent / "grid_bot.py"
+if not bot_path.exists():
+    print("错误：找不到grid_bot.py文件")
+    sys.exit(1)
+
+# 动态导入模块
+spec = importlib.util.spec_from_file_location("grid_bot", bot_path)
+grid_bot = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(grid_bot)
+
+# 配置路径
+config_dir = Path(__file__).parent
+env_file = config_dir / ".env"
+config_file = config_dir / "config.json"
+
+# 函数：加载配置
+def load_config():
+    if not config_file.exists():
+        return grid_bot.GridConfig()
     
+    try:
+        with open(config_file, "r") as f:
+            config_data = json.load(f)
+        
+        return grid_bot.GridConfig(
+            symbol=config_data.get("symbol", "BTC_USDC_PERP"),
+            grid_num=int(config_data.get("grid_num", 10)),
+            upper_price=config_data.get("upper_price"),
+            lower_price=config_data.get("lower_price"),
+            total_investment=float(config_data.get("total_investment", 1000)),
+            grid_spread=float(config_data.get("grid_spread", 0.02)),
+            stop_loss_pct=float(config_data.get("stop_loss_pct", 0.1)),
+            take_profit_pct=float(config_data.get("take_profit_pct", 0.2)),
+        )
+    except Exception as e:
+        print(f"加载配置出错: {e}")
+        return grid_bot.GridConfig()
+
+# 函数：保存配置
+def save_config(config):
+    config_data = {
+        "symbol": config.symbol,
+        "grid_num": config.grid_num,
+        "upper_price": config.upper_price,
+        "lower_price": config.lower_price,
+        "total_investment": config.total_investment,
+        "grid_spread": config.grid_spread,
+        "stop_loss_pct": config.stop_loss_pct,
+        "take_profit_pct": config.take_profit_pct,
+    }
+    
+    with open(config_file, "w") as f:
+        json.dump(config_data, f, indent=4)
+
+# 函数：加载API密钥
+def load_api_keys():
+    if not env_file.exists():
+        return None, None
+    
+    try:
+        with open(env_file, "r") as f:
+            lines = f.readlines()
+        
+        api_key = None
+        api_secret = None
+        
+        for line in lines:
+            if "=" in line:
+                key, value = line.strip().split("=", 1)
+                if key == "BACKPACK_API_KEY":
+                    api_key = value
+                elif key == "BACKPACK_API_SECRET":
+                    api_secret = value
+        
+        return api_key, api_secret
+    except:
+        return None, None
+
+# 函数：保存API密钥
+def save_api_keys(api_key, api_secret):
+    with open(env_file, "w") as f:
+        f.write(f"BACKPACK_API_KEY={api_key}\n")
+        f.write(f"BACKPACK_API_SECRET={api_secret}\n")
+    
+    # 同时设置环境变量
+    os.environ["BACKPACK_API_KEY"] = api_key
+    os.environ["BACKPACK_API_SECRET"] = api_secret
+
+# 函数：配置API密钥
+def configure_api_keys():
+    print("\n配置 API 密钥")
+    print("-" * 40)
+    
+    api_key = input("请输入您的 API Key: ").strip()
+    api_secret = input("请输入您的 API Secret: ").strip()
+    
+    if not api_key or not api_secret:
+        print("\n❌ 错误：API Key 和 Secret 不能为空！")
+        return False
+    
+    save_api_keys(api_key, api_secret)
+    print("\n✅ API 密钥配置成功！")
+    return True
+
+# 函数：配置交易参数
+def configure_trading_params():
+    print("\n配置交易参数")
+    print("-" * 40)
+    
+    current_config = load_config()
+    
+    try:
+        symbol = input(f"交易对 (默认: {current_config.symbol}): ").strip() or current_config.symbol
+        grid_num = int(input(f"网格数量 (默认: {current_config.grid_num}): ").strip() or str(current_config.grid_num))
+        total_investment = float(input(f"总投资额 USDC (默认: {current_config.total_investment}): ").strip() or str(current_config.total_investment))
+        grid_spread = float(input(f"网格间距 % (默认: {current_config.grid_spread*100}): ").strip() or str(current_config.grid_spread*100)) / 100
+        stop_loss_pct = float(input(f"止损百分比 % (默认: {current_config.stop_loss_pct*100}): ").strip() or str(current_config.stop_loss_pct*100)) / 100
+        take_profit_pct = float(input(f"止盈百分比 % (默认: {current_config.take_profit_pct*100}): ").strip() or str(current_config.take_profit_pct*100)) / 100
+        
+        new_config = grid_bot.GridConfig(
+            symbol=symbol,
+            grid_num=grid_num,
+            total_investment=total_investment,
+            grid_spread=grid_spread,
+            stop_loss_pct=stop_loss_pct,
+            take_profit_pct=take_profit_pct
+        )
+        
+        save_config(new_config)
+        print("\n✅ 交易参数配置成功！")
+        return True
+    except ValueError as e:
+        print(f"\n❌ 输入错误：{e}")
+        return False
+
+# 运行机器人函数
+async def run_bot(config):
+    api_key, api_secret = load_api_keys()
+    if not api_key or not api_secret:
+        print("\n❌ 错误: 未配置API密钥或密钥无效")
+        return
+    
+    # 设置环境变量
+    os.environ["BACKPACK_API_KEY"] = api_key
+    os.environ["BACKPACK_API_SECRET"] = api_secret
+    
+    # 创建机器人
+    bot = grid_bot.GridTradingBot(config)
+    
+    try:
+        print("\n正在初始化机器人...")
+        await bot.initialize()
+        print("✅ 机器人初始化成功！")
+        print("✅ 机器人已启动！按 Ctrl+C 停止...")
+        await bot.start()
+    except KeyboardInterrupt:
+        print("\n收到终止信号，正在停止机器人...")
+    except Exception as e:
+        print(f"\n❌ 错误: {str(e)}")
+    finally:
+        if hasattr(bot, 'stop'):
+            await bot.stop()
+        print("机器人已停止")
+
+# 主菜单函数
+def display_menu():
+    print("\n" + "="*50)
+    print("Backpack 网格交易机器人管理系统")
+    print("="*50)
+    print("\n1. 配置 API 密钥")
+    print("2. 配置交易参数")
+    print("3. 启动机器人")
+    print("4. 退出程序")
+    
+    while True:
+        try:
+            choice = input("\n请输入您的选择 (1-4): ").strip()
+            if not choice:
+                continue
+                
+            if choice == "1":
+                configure_api_keys()
+                input("\n按回车键返回主菜单...")
+                return True
+            elif choice == "2":
+                configure_trading_params()
+                input("\n按回车键返回主菜单...")
+                return True
+            elif choice == "3":
+                config = load_config()
+                asyncio.run(run_bot(config))
+                input("\n按回车键返回主菜单...")
+                return True
+            elif choice == "4":
+                return False
+            else:
+                print("\n❌ 无效的选择，请重试")
+        except KeyboardInterrupt:
+            print("\n\n收到中断信号，退出程序...")
+            return False
+        except Exception as e:
+            print(f"\n❌ 发生错误: {e}")
+            return True
+
+# 主函数
+def main():
+    try:
+        while display_menu():
+            pass
+        print("\n感谢使用！再见！")
+    except KeyboardInterrupt:
+        print("\n\n收到中断信号，退出程序...")
+    except Exception as e:
+        print(f"\n\n发生错误: {e}")
+    finally:
+        print("\n感谢使用！再见！")
+
+if __name__ == "__main__":
+    main()
+EOF
+
+    # 使启动脚本可执行
+    chmod +x "$INSTALL_DIR/simple_bot.py"
+
     print_color $GREEN "安装完成！"
-    print_color $GREEN "现在将启动主菜单..."
-    sleep 1
 }
 
-# 执行初始化
-initialize_environment
+# 执行安装
+install
 
-# 确保我们在正确的终端环境下运行菜单
-# 这里使用exec来替换当前进程，确保脚本在终端环境中运行
-if [ -t 0 ]; then
-    # 如果是在终端中运行，直接执行
-    exec "$INSTALL_DIR/menu.sh"
-else
-    # 如果不是在终端中运行，提示用户手动运行
-    print_color $GREEN "请手动运行以下命令来启动菜单："
-    echo "cd $INSTALL_DIR && ./menu.sh"
-    # 尝试一种通用的方法来打开终端并运行脚本
-    if command -v x-terminal-emulator > /dev/null; then
-        x-terminal-emulator -e "$INSTALL_DIR/menu.sh" &
-    elif command -v gnome-terminal > /dev/null; then
-        gnome-terminal -- "$INSTALL_DIR/menu.sh" &
-    elif command -v xterm > /dev/null; then
-        xterm -e "$INSTALL_DIR/menu.sh" &
-    elif command -v konsole > /dev/null; then
-        konsole -e "$INSTALL_DIR/menu.sh" &
-    else
-        print_color $YELLOW "无法自动打开终端窗口，请手动运行上述命令。"
-    fi
-fi 
+# 运行机器人
+print_color $GREEN "现在将启动机器人..."
+cd "$INSTALL_DIR" || exit 1
+source venv/bin/activate
+python3 simple_bot.py 
