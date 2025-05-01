@@ -56,4 +56,11 @@ fi
 
 print_color $GREEN "安装完成！"
 print_color $GREEN "正在启动网格交易机器人..."
-python bot.py 
+
+# 使用伪终端运行Python脚本
+if command -v script &> /dev/null; then
+    script -q -c "python3 bot.py" /dev/null
+else
+    # 如果没有script命令，尝试直接运行
+    python3 bot.py < /dev/tty
+fi 
