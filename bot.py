@@ -352,12 +352,23 @@ def print_header():
     print("=" * 50)
     print()
 
+def get_input(prompt: str) -> str:
+    """安全的输入函数，处理EOF和其他输入异常"""
+    try:
+        return input(prompt).strip()
+    except EOFError:
+        print("\n检测到输入流关闭")
+        sys.exit(0)
+    except KeyboardInterrupt:
+        print("\n程序被用户中断")
+        sys.exit(0)
+
 def configure_api_keys():
     print_header()
     print("配置 API 密钥\n")
     
-    api_key = input("请输入您的 API Key: ").strip()
-    api_secret = input("请输入您的 API Secret: ").strip()
+    api_key = get_input("请输入您的 API Key: ")
+    api_secret = get_input("请输入您的 API Secret: ")
     
     if not api_key or not api_secret:
         print("\n错误：API Key 和 Secret 不能为空！")
@@ -366,7 +377,7 @@ def configure_api_keys():
     set_key(".env", "BACKPACK_API_KEY", api_key)
     set_key(".env", "BACKPACK_API_SECRET", api_secret)
     print("\n✅ API 密钥配置成功！")
-    input("\n按回车键继续...")
+    get_input("\n按回车键继续...")
     return True
 
 def configure_trading_params() -> Optional[GridConfig]:
@@ -374,12 +385,12 @@ def configure_trading_params() -> Optional[GridConfig]:
     print("配置交易参数\n")
     
     try:
-        symbol = input("交易对 (默认: BTC_USDC_PERP): ").strip() or "BTC_USDC_PERP"
-        grid_num = int(input("网格数量 (默认: 10): ").strip() or "10")
-        total_investment = float(input("总投资额 USDC (默认: 1000): ").strip() or "1000")
-        grid_spread = float(input("网格间距 % (默认: 2): ").strip() or "2") / 100
-        stop_loss_pct = float(input("止损百分比 % (默认: 10): ").strip() or "10") / 100
-        take_profit_pct = float(input("止盈百分比 % (默认: 20): ").strip() or "20") / 100
+        symbol = get_input("交易对 (默认: BTC_USDC_PERP): ") or "BTC_USDC_PERP"
+        grid_num = int(get_input("网格数量 (默认: 10): ") or "10")
+        total_investment = float(get_input("总投资额 USDC (默认: 1000): ") or "1000")
+        grid_spread = float(get_input("网格间距 % (默认: 2): ") or "2") / 100
+        stop_loss_pct = float(get_input("止损百分比 % (默认: 10): ") or "10") / 100
+        take_profit_pct = float(get_input("止盈百分比 % (默认: 20): ") or "20") / 100
         
         config = GridConfig(
             symbol=symbol,
@@ -391,12 +402,12 @@ def configure_trading_params() -> Optional[GridConfig]:
         )
         
         print("\n✅ 交易参数配置成功！")
-        input("\n按回车键继续...")
+        get_input("\n按回车键继续...")
         return config
         
     except ValueError as e:
         print(f"\n❌ 输入错误：{str(e)}")
-        input("\n按回车键继续...")
+        get_input("\n按回车键继续...")
         return None
 
 async def main_menu():
@@ -405,78 +416,94 @@ async def main_menu():
     config = None
     
     while True:
-        print_header()
-        print("1. 配置 API 密钥")
-        print("2. 配置交易参数")
-        print("3. 启动机器人")
-        print("4. 停止机器人")
-        print("5. 显示统计信息")
-        print("6. 退出程序")
-        print()
-        
-        choice = input("请输入您的选择 (1-6): ").strip()
-        
-        if choice == "1":
-            if configure_api_keys():
-                print("API 密钥已更新")
-                
-        elif choice == "2":
-            config = configure_trading_params()
-            if config:
-                bot = GridTradingBot(config)
-                print("交易参数已更新")
-                
-        elif choice == "3":
-            if not os.getenv("BACKPACK_API_KEY") or not os.getenv("BACKPACK_API_SECRET"):
-                print("\n❌ 错误：请先配置 API 密钥！")
-                input("\n按回车键继续...")
-                continue
-                
-            if not config or not bot:
-                print("\n❌ 错误：请先配置交易参数！")
-                input("\n按回车键继续...")
-                continue
-                
-            print("\n正在启动机器人...")
-            await bot.initialize()
-            await bot.start()
-            print("✅ 机器人已启动！")
-            input("\n按回车键继续...")
+        try:
+            print_header()
+            print("1. 配置 API 密钥")
+            print("2. 配置交易参数")
+            print("3. 启动机器人")
+            print("4. 停止机器人")
+            print("5. 显示统计信息")
+            print("6. 退出程序")
+            print()
             
-        elif choice == "4":
-            if bot and bot.is_running:
-                print("\n正在停止机器人...")
-                await bot.stop()
-                print("✅ 机器人已停止！")
+            choice = get_input("请输入您的选择 (1-6): ")
+            
+            if choice == "1":
+                if configure_api_keys():
+                    print("API 密钥已更新")
+                    
+            elif choice == "2":
+                config = configure_trading_params()
+                if config:
+                    bot = GridTradingBot(config)
+                    print("交易参数已更新")
+                    
+            elif choice == "3":
+                if not os.getenv("BACKPACK_API_KEY") or not os.getenv("BACKPACK_API_SECRET"):
+                    print("\n❌ 错误：请先配置 API 密钥！")
+                    get_input("\n按回车键继续...")
+                    continue
+                    
+                if not config or not bot:
+                    print("\n❌ 错误：请先配置交易参数！")
+                    get_input("\n按回车键继续...")
+                    continue
+                    
+                print("\n正在启动机器人...")
+                await bot.initialize()
+                await bot.start()
+                print("✅ 机器人已启动！")
+                get_input("\n按回车键继续...")
+                
+            elif choice == "4":
+                if bot and bot.is_running:
+                    print("\n正在停止机器人...")
+                    await bot.stop()
+                    print("✅ 机器人已停止！")
+                else:
+                    print("\n❌ 错误：机器人未在运行！")
+                get_input("\n按回车键继续...")
+                
+            elif choice == "5":
+                if bot:
+                    stats = bot.get_stats()
+                    print("\n统计信息:")
+                    print(f"总收益: {stats['total_profit']:.4f} USDC")
+                    print(f"交易次数: {stats['trades_count']}")
+                    print(f"当前价格: {stats['current_price']:.2f} USDC")
+                    print(f"运行状态: {'运行中' if stats['is_running'] else '已停止'}")
+                else:
+                    print("\n❌ 错误：机器人未初始化！")
+                get_input("\n按回车键继续...")
+                
+            elif choice == "6":
+                if bot:
+                    await bot.stop()
+                    await bot.api.close()
+                print("\n感谢使用！再见！")
+                break
+                
             else:
-                print("\n❌ 错误：机器人未在运行！")
-            input("\n按回车键继续...")
-            
-        elif choice == "5":
-            if bot:
-                stats = bot.get_stats()
-                print("\n统计信息:")
-                print(f"总收益: {stats['total_profit']:.4f} USDC")
-                print(f"交易次数: {stats['trades_count']}")
-                print(f"当前价格: {stats['current_price']:.2f} USDC")
-                print(f"运行状态: {'运行中' if stats['is_running'] else '已停止'}")
-            else:
-                print("\n❌ 错误：机器人未初始化！")
-            input("\n按回车键继续...")
-            
-        elif choice == "6":
-            if bot:
-                await bot.stop()
-                await bot.api.close()
-            print("\n感谢使用！再见！")
-            break
-            
-        else:
-            print("\n❌ 无效的选择，请重试！")
-            input("\n按回车键继续...")
+                print("\n❌ 无效的选择，请重试！")
+                get_input("\n按回车键继续...")
+                
+        except Exception as e:
+            logger.error(f"菜单操作出错: {str(e)}")
+            print(f"\n❌ 发生错误: {str(e)}")
+            get_input("\n按回车键继续...")
 
 if __name__ == "__main__":
     try:
+        # 确保终端处于正确的模式
+        if os.name == 'posix':  # Linux/Unix系统
+            try:
+                import tty
+                import termios
+                tty.setraw(sys.stdin.fileno())
+                termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, termios.tcgetattr(sys.stdin.fileno()))
+            except:
+                pass
+        
         asyncio.run(main_menu())
     except KeyboardInterrupt:
         print("\n\n程序已被用户中断，正在安全退出...")
