@@ -343,11 +343,18 @@ class GridTradingBot:
 
 # CLI Menu Functions
 def get_input(prompt: str) -> str:
-    """简单的输入函数"""
+    """直接从标准输入读取"""
+    print(prompt, end='', flush=True)
     try:
-        return input(prompt).strip()
-    except (EOFError, KeyboardInterrupt):
-        sys.exit(0)
+        # 直接从标准输入读取一行
+        return sys.stdin.readline().strip()
+    except:
+        # 如果出现任何错误，等待一秒后重试
+        time.sleep(1)
+        try:
+            return input(prompt).strip()
+        except:
+            return ""
 
 def clear_screen():
     """清理屏幕"""
@@ -425,7 +432,9 @@ async def main_menu():
         print()
         
         choice = get_input("请输入您的选择 (1-6): ")
-        
+        if not choice:  # 如果输入为空，继续等待
+            continue
+            
         if choice == "1":
             if configure_api_keys():
                 print("API 密钥已更新")
@@ -475,11 +484,13 @@ async def main_menu():
             get_input("\n按回车键继续...")
             
         elif choice == "6":
-            if bot:
-                await bot.stop()
-                await bot.api.close()
-            print("\n感谢使用！再见！")
-            break
+            confirm = get_input("\n确认要退出吗？(y/n): ").lower()
+            if confirm == 'y':
+                if bot:
+                    await bot.stop()
+                    await bot.api.close()
+                print("\n感谢使用！再见！")
+                break
             
         else:
             print("\n❌ 无效的选择，请重试！")
@@ -495,4 +506,6 @@ if __name__ == "__main__":
         print(f"\n\n程序运行出错：{str(e)}")
         logger.exception("程序异常退出")
     finally:
+        if 'bot' in locals() and bot and bot.is_running:
+            asyncio.run(bot.stop())
         print("\n感谢使用！再见！") 
