@@ -22,9 +22,23 @@ echo -e "${YELLOW}      Backpack ETH自动交易机器人安装程序       ${NC
 echo -e "${YELLOW}==============================================${NC}"
 echo ""
 
-# 检查是否为 root 用户运行
+# 检测是否为root用户，但不阻止运行
+IS_ROOT=0
 if [ "$EUID" -eq 0 ]; then
-    error_exit "请不要使用 root 用户直接运行此脚本。请使用普通用户并在需要时使用 sudo。"
+    IS_ROOT=1
+    echo -e "${YELLOW}⚠ 您正在使用root用户运行此脚本${NC}"
+    echo -e "${YELLOW}⚠ 将自动进行所有系统级操作${NC}"
+    echo ""
+else
+    echo -e "${YELLOW}⚠ 您正在使用普通用户运行此脚本${NC}"
+    echo -e "${YELLOW}⚠ 系统级操作将使用sudo命令${NC}"
+    echo ""
+fi
+
+# 定义sudo命令
+SUDO_CMD=""
+if [ $IS_ROOT -eq 0 ]; then
+    SUDO_CMD="sudo"
 fi
 
 # 检查系统
@@ -89,11 +103,11 @@ echo -e "${BLUE}[3/5] 正在安装依赖...${NC}"
 
 # 更新软件包列表
 echo -e "  正在更新软件包列表..."
-sudo apt-get update -qq || error_exit "更新软件包列表失败"
+$SUDO_CMD apt-get update -qq || error_exit "更新软件包列表失败"
 
 # 安装必要的系统包
 echo -e "  正在安装必要的系统包..."
-sudo apt-get install -y python3 python3-pip nodejs npm curl jq -qq || error_exit "安装系统依赖失败"
+$SUDO_CMD apt-get install -y python3 python3-pip nodejs npm curl jq -qq || error_exit "安装系统依赖失败"
 
 # 检查Python版本
 PYTHON_VER=$(python3 --version 2>/dev/null)
@@ -105,7 +119,7 @@ fi
 
 # 安装PM2
 echo -e "  正在安装PM2..."
-sudo npm install pm2 -g -s || error_exit "安装PM2失败"
+$SUDO_CMD npm install pm2 -g -s || error_exit "安装PM2失败"
 PM2_VER=$(pm2 --version 2>/dev/null)
 echo -e "  ✓ 已安装PM2: $PM2_VER"
 
