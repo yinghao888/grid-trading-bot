@@ -10,6 +10,7 @@ import time
 import asyncio
 import re
 from datetime import datetime
+import argparse
 
 # 颜色输出函数
 def print_green(text):
@@ -46,6 +47,25 @@ def safe_input(prompt=""):
     except Exception as e:
         print_red(f"输入错误: {e}")
         return ""
+
+# 解析命令行参数
+def parse_args():
+    parser = argparse.ArgumentParser(description='Backpack 交易机器人配置菜单')
+    parser.add_argument('--quick-setup', action='store_true', help='直接启动快速配置向导')
+    parser.add_argument('--configure-api', action='store_true', help='直接配置交易所API')
+    parser.add_argument('--configure-telegram', action='store_true', help='直接配置Telegram')
+    parser.add_argument('--select-pairs', action='store_true', help='直接选择交易对')
+    parser.add_argument('--configure-params', action='store_true', help='直接配置交易参数')
+    parser.add_argument('--view-logs', action='store_true', help='查看日志')
+    parser.add_argument('--start-bot', action='store_true', help='启动交易机器人')
+    parser.add_argument('--stop-bot', action='store_true', help='停止交易机器人')
+    parser.add_argument('--api-key', help='设置API密钥')
+    parser.add_argument('--api-secret', help='设置API密钥')
+    parser.add_argument('--telegram-id', help='设置Telegram ID')
+    parser.add_argument('--trading-pairs', help='设置交易对，用逗号分隔')
+    parser.add_argument('--position-limit', help='设置仓位限制')
+    parser.add_argument('--funding-threshold', help='设置资金费率阈值')
+    return parser.parse_args()
 
 # 检测是否使用systemd
 def is_using_systemd():
@@ -91,15 +111,20 @@ def save_config(config):
         config.write(f)
     print_green("配置已保存")
 
-# 配置 Telegram
-def configure_telegram():
+# 配置Telegram（支持命令行参数）
+def configure_telegram(telegram_id=None):
     config = load_config()
     
     print_blue("配置 Telegram")
     print_blue("机器人将使用默认令牌：7685502184:AAGxaIdwiTr0WpPDeIGmc9fgbdeSKxgXtEw")
-    print_yellow("请输入您的 Telegram 用户 ID (可通过 @userinfobot 获取):")
     
-    chat_id = safe_input().strip()
+    # 如果通过命令行提供了Telegram ID，直接使用
+    if telegram_id:
+        chat_id = telegram_id
+        print_yellow(f"使用提供的Telegram ID: {chat_id}")
+    else:
+        print_yellow("请输入您的 Telegram 用户 ID (可通过 @userinfobot 获取):")
+        chat_id = safe_input().strip()
     
     if chat_id:
         config.set("telegram", "chat_id", chat_id)
@@ -108,18 +133,24 @@ def configure_telegram():
     else:
         print_red("未输入 ID，Telegram 配置未更改。")
     
-    safe_input("按 Enter 键返回主菜单...")
+    if not telegram_id:  # 只有在交互模式下才等待用户输入
+        safe_input("按 Enter 键返回主菜单...")
 
-# 配置交易所 API
-def configure_exchange_api():
+# 配置交易所 API（支持命令行参数）
+def configure_exchange_api(api_key=None, api_secret=None):
     config = load_config()
     
     print_blue("配置 Backpack 交易所 API")
-    print_yellow("请输入您的 API Key:")
-    api_key = safe_input().strip()
     
-    print_yellow("请输入您的 API Secret:")
-    api_secret = safe_input().strip()
+    # 如果通过命令行提供了API密钥，直接使用
+    if api_key and api_secret:
+        print_yellow(f"使用提供的API密钥和密钥")
+    else:
+        print_yellow("请输入您的 API Key:")
+        api_key = safe_input().strip()
+        
+        print_yellow("请输入您的 API Secret:")
+        api_secret = safe_input().strip()
     
     if api_key and api_secret:
         config.set("api", "api_key", api_key)
@@ -129,14 +160,14 @@ def configure_exchange_api():
     else:
         print_red("API Key 或 Secret 不能为空！配置未更改。")
     
-    safe_input("按 Enter 键返回主菜单...")
+    if not (api_key and api_secret):  # 只有在交互模式下才等待用户输入
+        safe_input("按 Enter 键返回主菜单...")
 
-# 选择交易对
-def select_trading_pairs():
+# 选择交易对（支持命令行参数）
+def select_trading_pairs(trading_pairs=None):
     config = load_config()
     
     # 获取支持的交易对列表
-    # 在实际情况中，这可能需要从交易所 API 获取
     supported_pairs = [
         "BTC_USDC_PERP", 
         "ETH_USDC_PERP", 
@@ -146,7 +177,28 @@ def select_trading_pairs():
         "DOGE_USDC_PERP"
     ]
     
-    # 当前已配置的交易对
+    # 如果通过命令行提供了交易对，直接使用
+    if trading_pairs:
+        # 验证交易对是否有效
+        pairs = trading_pairs.split(",")
+        valid_pairs = []
+        for pair in pairs:
+            pair = pair.strip()
+            if pair in supported_pairs:
+                valid_pairs.append(pair)
+            else:
+                print_red(f"无效的交易对: {pair}")
+        
+        if valid_pairs:
+            config.set("trading", "symbols", ",".join(valid_pairs))
+            save_config(config)
+            print_green("交易对配置已保存！")
+            return
+        else:
+            print_red("未提供有效的交易对！")
+            return
+    
+    # 交互式配置
     current_pairs = config.get("trading", "symbols").split(",")
     
     while True:
@@ -212,117 +264,24 @@ def select_trading_pairs():
             time.sleep(1)
             break
 
-# 查看日志
-def view_logs():
-    os.system('clear' if os.name != 'nt' else 'cls')
-    print_blue("查看日志")
-    
-    # 使用systemd还是PM2
-    use_systemd = is_using_systemd()
-    
-    if use_systemd:
-        try:
-            # 使用systemd日志
-            print_blue("正在获取systemd日志...")
-            os.system("journalctl --user -u backpack-bot -n 20")
-            
-            print_yellow("\n操作选项:")
-            print("1. 刷新")
-            print("2. 查看更多日志")
-            print("Q. 返回主菜单")
-            
-            choice = safe_input("\n请选择操作: ").strip().upper()
-            
-            if choice == '1':
-                view_logs()  # 刷新
-                return
-            elif choice == '2':
-                os.system("journalctl --user -u backpack-bot")
-            elif choice == 'Q':
-                return
-        except Exception as e:
-            print_red(f"获取systemd日志失败: {e}")
-            safe_input("按 Enter 键返回主菜单...")
-        return
-    
-    # 查找最新日志文件
-    log_pattern = re.compile(r'backpack_bot_(\d{8})\.log')
-    pm2_logs = []
-    
-    try:
-        # 首先尝试获取PM2日志
-        pm2_log_dir = os.path.expanduser("~/.pm2/logs")
-        if os.path.exists(pm2_log_dir):
-            for file in os.listdir(pm2_log_dir):
-                if file.startswith("backpack_bot"):
-                    pm2_logs.append(os.path.join(pm2_log_dir, file))
-    except:
-        pass
-    
-    # 检查本地日志目录
-    logs = []
-    for file in os.listdir(CONFIG_DIR):
-        match = log_pattern.match(file)
-        if match:
-            logs.append((file, match.group(1)))
-    
-    if not logs and not pm2_logs:
-        print_red("未找到日志文件")
-        safe_input("按 Enter 键返回主菜单...")
-        return
-    
-    # 按日期排序本地日志
-    logs.sort(key=lambda x: x[1], reverse=True)
-    
-    # 显示最新的日志
-    log_file = ""
-    if pm2_logs:
-        # 优先显示PM2日志
-        log_file = pm2_logs[0]
-        log_name = os.path.basename(log_file)
-    elif logs:
-        log_file = os.path.join(CONFIG_DIR, logs[0][0])
-        log_name = logs[0][0]
-    
-    while True:
-        os.system('clear' if os.name != 'nt' else 'cls')
-        print_blue(f"显示日志文件: {log_name}")
-        
-        # 使用 tail 命令显示最新日志
-        if os.name != 'nt':
-            os.system(f"tail -n 20 {log_file}")
-        else:
-            # Windows 版本
-            try:
-                with open(log_file, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
-                    for line in lines[-20:]:
-                        print(line.strip())
-            except:
-                print_red("读取日志文件失败")
-        
-        print_yellow("\n操作选项:")
-        print("1. 刷新")
-        print("2. 查看全部日志")
-        print("Q. 返回主菜单")
-        
-        choice = safe_input("\n请选择操作: ").strip().upper()
-        
-        if choice == '1':
-            continue
-        elif choice == '2':
-            if os.name != 'nt':
-                os.system(f"less {log_file}")
-            else:
-                # Windows 版本
-                os.system(f"type {log_file} | more")
-        elif choice == 'Q':
-            break
-
-# 配置交易参数
-def configure_trading_params():
+# 配置交易参数（支持命令行参数）
+def configure_trading_params(position_limit=None, funding_threshold=None):
     config = load_config()
     
+    # 如果通过命令行提供了参数，直接使用
+    if position_limit or funding_threshold:
+        if position_limit:
+            config.set("trading", "position_limit", position_limit)
+            print_green(f"仓位限制已设置为: {position_limit}")
+        
+        if funding_threshold:
+            config.set("trading", "funding_threshold", funding_threshold)
+            print_green(f"资金费率阈值已设置为: {funding_threshold}")
+        
+        save_config(config)
+        return
+    
+    # 交互式配置
     os.system('clear' if os.name != 'nt' else 'cls')
     print_blue("配置交易参数")
     
@@ -595,6 +554,58 @@ def quick_setup_wizard():
 
 # 主菜单
 def main_menu():
+    # 解析命令行参数
+    args = parse_args()
+    
+    # 如果提供了命令行参数，则直接执行相应的操作，不进入交互式菜单
+    if args.api_key and args.api_secret:
+        configure_exchange_api(args.api_key, args.api_secret)
+    
+    if args.telegram_id:
+        configure_telegram(args.telegram_id)
+    
+    if args.trading_pairs:
+        select_trading_pairs(args.trading_pairs)
+    
+    if args.position_limit or args.funding_threshold:
+        configure_trading_params(args.position_limit, args.funding_threshold)
+    
+    if args.quick_setup:
+        quick_setup_wizard()
+        return
+    
+    if args.configure_api:
+        configure_exchange_api()
+        return
+    
+    if args.configure_telegram:
+        configure_telegram()
+        return
+    
+    if args.select_pairs:
+        select_trading_pairs()
+        return
+    
+    if args.configure_params:
+        configure_trading_params()
+        return
+    
+    if args.view_logs:
+        view_logs()
+        return
+    
+    if args.start_bot:
+        start_bot()
+        return
+    
+    if args.stop_bot:
+        stop_bot()
+        return
+    
+    # 检查是否有任何命令行参数被使用
+    if any(vars(args).values()):
+        return  # 如果使用了任何命令行参数，则不启动交互式菜单
+
     # 检查是否首次运行
     config = load_config()
     first_run = (config["api"]["api_key"] == "YOUR_API_KEY")
