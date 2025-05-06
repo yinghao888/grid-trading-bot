@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# 定义GitHub仓库URL
+REPO_URL="https://raw.githubusercontent.com/yinghao888/grid-trading-bot/main"
+
 # 输出带颜色的文字函数
 print_green() {
     echo -e "\033[32m$1\033[0m"
@@ -16,6 +19,21 @@ print_red() {
 # 检查是否安装了必要的软件
 check_dependencies() {
     print_blue "检查系统依赖..."
+    
+    # 检查 wget
+    if ! command -v wget &> /dev/null; then
+        print_red "未检测到 wget，正在安装..."
+        if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            sudo apt-get update
+            sudo apt-get install -y wget
+        elif [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS
+            brew install wget
+        else
+            print_red "不支持的操作系统，请手动安装 wget"
+            exit 1
+        fi
+    fi
     
     # 检查 Python 3.7+
     if ! command -v python3 &> /dev/null; then
@@ -79,20 +97,20 @@ install_python_dependencies() {
     print_green "Python 依赖安装完成！"
 }
 
-# 配置项目文件
-setup_project_files() {
-    print_blue "配置项目文件..."
+# 下载项目文件
+download_project_files() {
+    print_blue "下载项目文件..."
     
     # 确保配置目录存在
     mkdir -p $HOME/.backpack_bot
     
-    # 复制项目文件到配置目录
-    cp backpack_bot.py $HOME/.backpack_bot/
-    cp backpack_api_impl.py $HOME/.backpack_bot/
-    cp config.ini $HOME/.backpack_bot/
-    cp menu.py $HOME/.backpack_bot/
-    cp telegram_handler.py $HOME/.backpack_bot/
-    cp ecosystem.config.js $HOME/.backpack_bot/
+    # 下载所有必要文件
+    wget -O $HOME/.backpack_bot/backpack_bot.py $REPO_URL/backpack_bot.py
+    wget -O $HOME/.backpack_bot/backpack_api_impl.py $REPO_URL/backpack_api_impl.py
+    wget -O $HOME/.backpack_bot/menu.py $REPO_URL/menu.py
+    wget -O $HOME/.backpack_bot/telegram_handler.py $REPO_URL/telegram_handler.py
+    wget -O $HOME/.backpack_bot/ecosystem.config.js $REPO_URL/ecosystem.config.js
+    wget -O $HOME/.backpack_bot/config.ini $REPO_URL/config.ini
     
     # 设置启动脚本
     cat > $HOME/.backpack_bot/start.sh << EOF
@@ -104,7 +122,7 @@ EOF
     # 设置执行权限
     chmod +x $HOME/.backpack_bot/start.sh
     
-    print_green "项目文件配置完成！"
+    print_green "项目文件下载完成！"
 }
 
 # 设置 PM2 管理
@@ -129,8 +147,8 @@ main() {
     # 安装 Python 依赖
     install_python_dependencies
     
-    # 配置项目文件
-    setup_project_files
+    # 下载项目文件
+    download_project_files
     
     # 设置 PM2
     setup_pm2
@@ -143,4 +161,4 @@ main() {
 }
 
 # 执行主函数
-main 
+main
