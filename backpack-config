@@ -20,6 +20,11 @@ print_yellow() {
 CONFIG_DIR="$HOME/.backpack_bot"
 MENU_SCRIPT="$CONFIG_DIR/menu.py"
 
+# 检查是否在TTY终端中运行
+if [ ! -t 0 ]; then
+    print_yellow "警告: 当前不在交互式终端中运行，可能会导致某些功能受限"
+fi
+
 # 检查配置目录是否存在
 if [ ! -d "$CONFIG_DIR" ]; then
     print_yellow "配置目录不存在，正在创建..."
@@ -45,4 +50,16 @@ fi
 # 进入配置目录并启动菜单
 cd "$CONFIG_DIR"
 print_blue "启动 Backpack 交易机器人配置菜单..."
-python3 menu.py 
+
+# 使用超时命令，避免无限等待
+if command -v timeout &> /dev/null; then
+    # timeout命令可用，使用它来防止无限等待
+    timeout 1h python3 menu.py
+    exit_code=$?
+    if [ $exit_code -eq 124 ]; then
+        print_yellow "菜单会话超时，已自动退出"
+    fi
+else
+    # 直接运行Python脚本
+    python3 menu.py
+fi
