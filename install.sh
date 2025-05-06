@@ -12,7 +12,7 @@ echo -e "${YELLOW}==============================================${NC}"
 echo ""
 
 # 检查系统
-echo -e "${BLUE}[1/6] 正在检查系统...${NC}"
+echo -e "${BLUE}[1/5] 正在检查系统...${NC}"
 
 if [ -f /etc/os-release ]; then
     . /etc/os-release
@@ -34,7 +34,7 @@ fi
 
 # 创建必要的目录
 echo ""
-echo -e "${BLUE}[2/6] 正在准备环境...${NC}"
+echo -e "${BLUE}[2/5] 正在准备环境...${NC}"
 
 # 检查和升级Python
 PYTHON_VER=$(python3 --version 2>/dev/null)
@@ -64,9 +64,18 @@ else
     echo -e "  ✓ 已安装PM2: $PM2_VER"
 fi
 
+# 检查jq (用于处理JSON)
+if ! command -v jq &> /dev/null; then
+    echo -e "  ${RED}✗ 未检测到jq，正在安装...${NC}"
+    sudo apt-get update
+    sudo apt-get install -y jq
+else
+    echo -e "  ✓ 已安装jq"
+fi
+
 # 安装必要的Python包
 echo ""
-echo -e "${BLUE}[3/6] 正在安装依赖包...${NC}"
+echo -e "${BLUE}[3/5] 正在安装依赖包...${NC}"
 echo -e "  正在安装Python依赖..."
 pip3 install aiohttp requests
 
@@ -79,7 +88,7 @@ fi
 
 # 配置选项
 echo ""
-echo -e "${BLUE}[4/6] 正在配置交易机器人...${NC}"
+echo -e "${BLUE}[4/5] 正在设置文件和路径...${NC}"
 
 CONFIG_DIR="$HOME/.backpack_bot"
 CONFIG_FILE="$CONFIG_DIR/config.json"
@@ -121,35 +130,11 @@ EOF
     echo -e "  ✓ 已创建默认配置文件: $CONFIG_FILE"
 fi
 
-# 交互式配置
-echo ""
-echo -e "${YELLOW}===== 交易机器人配置 =====${NC}"
-
-# Telegram配置
-echo -e "${BLUE}Telegram配置${NC}"
-echo -e "请输入您的Telegram Chat ID（使用@userinfobot获取）:"
-read -p "> " TELEGRAM_CHAT_ID
-
-# Backpack API配置
-echo -e "${BLUE}Backpack API配置${NC}"
-echo -e "请输入您的Backpack API Key:"
-read -p "> " API_KEY
-echo -e "请输入您的Backpack API Secret:"
-read -p "> " API_SECRET
-
-# 更新配置文件
-TEMP_CONFIG=$(mktemp)
-cat "$CONFIG_FILE" | jq --arg chat_id "$TELEGRAM_CHAT_ID" '.telegram.chat_id = $chat_id' > "$TEMP_CONFIG"
-cat "$TEMP_CONFIG" | jq --arg api_key "$API_KEY" '.backpack.api_key = $api_key' > "$CONFIG_FILE"
-cat "$CONFIG_FILE" | jq --arg api_secret "$API_SECRET" '.backpack.api_secret = $api_secret' > "$TEMP_CONFIG"
-cp "$TEMP_CONFIG" "$CONFIG_FILE"
-rm "$TEMP_CONFIG"
-
-echo -e "  ✓ 配置已保存到: $CONFIG_FILE"
+# 创建启动脚本
+echo -e "  正在创建启动和配置脚本..."
 
 # 创建启动脚本
-echo ""
-echo -e "${BLUE}[5/6] 正在创建启动脚本...${NC}"
+mkdir -p "$HOME/.local/bin"
 
 # 创建启动脚本
 cat > "$HOME/.local/bin/backpack-start" << 'EOF'
@@ -296,11 +281,6 @@ EOF
 
 chmod +x "$HOME/.local/bin/backpack-config"
 
-# 确保路径存在
-if [ ! -d "$HOME/.local/bin" ]; then
-    mkdir -p "$HOME/.local/bin"
-fi
-
 # 将路径添加到PATH
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
@@ -311,7 +291,7 @@ fi
 
 # 打印安装完成信息
 echo ""
-echo -e "${BLUE}[6/6] 安装完成!${NC}"
+echo -e "${BLUE}[5/5] 安装完成!${NC}"
 echo -e "${GREEN}Backpack ETH自动交易机器人已成功安装!${NC}"
 echo ""
 echo -e "${YELLOW}可用命令:${NC}"
@@ -324,21 +304,10 @@ echo ""
 echo -e "${YELLOW}日志文件:${NC}"
 echo -e "  查看日志: ${GREEN}pm2 logs backpack_bot${NC}"
 echo ""
+echo -e "${YELLOW}==============================================${NC}"
 
-# 询问是否立即启动机器人
-echo -e "${YELLOW}是否立即启动交易机器人? (y/n)${NC}"
-read -p "> " START_CHOICE
-
-if [[ $START_CHOICE =~ ^[Yy]$ ]]; then
-    echo -e "${BLUE}正在启动交易机器人...${NC}"
-    cd "$CONFIG_DIR"
-    pm2 start backpack_bot.py --name backpack_bot --interpreter python3 -- --run
-    echo -e "${GREEN}交易机器人已启动!${NC}"
-    echo -e "使用 '${GREEN}pm2 logs backpack_bot${NC}' 查看日志"
-else
-    echo -e "${BLUE}您可以稍后使用 '${GREEN}backpack-start${NC}' 命令启动交易机器人${NC}"
-fi
-
+# 自动启动配置菜单
+echo -e "${BLUE}正在自动启动配置菜单...${NC}"
 echo ""
-echo -e "${YELLOW}感谢使用Backpack ETH自动交易机器人!${NC}"
-echo -e "${YELLOW}==============================================${NC}" 
+cd "$CONFIG_DIR"
+python3 backpack_bot.py 
