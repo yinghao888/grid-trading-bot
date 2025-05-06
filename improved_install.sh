@@ -128,6 +128,9 @@ download_project_files() {
     print_yellow "下载 config.ini..."
     curl -s -o config.ini $REPO_URL/config.ini
     
+    print_yellow "下载一键配置脚本..."
+    curl -s -o backpack-config $REPO_URL/backpack-config
+    
     # 验证文件是否正确下载
     if [ ! -f menu.py ] || [ ! -s menu.py ]; then
         print_red "menu.py 下载失败或文件为空！"
@@ -140,7 +143,7 @@ download_project_files() {
     fi
     
     # 检查其他重要文件
-    for file in backpack_bot.py backpack_api_impl.py telegram_handler.py ecosystem.config.js config.ini; do
+    for file in backpack_bot.py backpack_api_impl.py telegram_handler.py ecosystem.config.js config.ini backpack-config; do
         if [ ! -f "$file" ] || [ ! -s "$file" ]; then
             print_red "$file 下载失败或文件为空！"
             print_yellow "尝试备用方式下载..."
@@ -161,6 +164,30 @@ EOF
     
     # 设置执行权限
     chmod +x start.sh
+    chmod +x backpack-config
+    
+    # 将配置命令移动到系统路径
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        if [ -d "/usr/local/bin" ]; then
+            print_yellow "安装backpack-config命令到系统..."
+            sudo cp backpack-config /usr/local/bin/
+            sudo chmod +x /usr/local/bin/backpack-config
+        else
+            print_yellow "无法找到合适的系统路径，将在本地目录使用命令"
+        fi
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        if [ -d "/usr/local/bin" ]; then
+            print_yellow "安装backpack-config命令到系统..."
+            sudo cp backpack-config /usr/local/bin/
+            sudo chmod +x /usr/local/bin/backpack-config
+        else
+            print_yellow "无法找到合适的系统路径，将在本地目录使用命令"
+        fi
+    else
+        print_yellow "无法安装全局命令。您可以通过以下方式启动配置菜单："
+        print_yellow "$HOME/.backpack_bot/start.sh"
+    fi
     
     print_green "项目文件下载完成！"
 }
@@ -169,10 +196,66 @@ EOF
 setup_pm2() {
     print_blue "设置 PM2 管理..."
     
+    # 确保 PM2 配置文件正确，只用于交易机器人
+    cat > $HOME/.backpack_bot/ecosystem.config.js << 'EOF'
+module.exports = {
+  apps : [{
+    name: 'backpack_bot',
+    script: `${process.env.HOME}/.backpack_bot/backpack_bot.py`,
+    interpreter: 'python3',
+    autorestart: true,
+    watch: false,
+    max_memory_restart: '200M',
+    env: {
+      NODE_ENV: 'production'
+    },
+    log_date_format: 'YYYY-MM-DD HH:mm:ss'
+  }]
+}; 
+EOF
+    
     # 设置 PM2 开机自启
     pm2 startup | grep -v "sudo" || true
     
     print_green "PM2 配置完成！"
+}
+
+# 创建一键配置命令
+create_config_command() {
+    print_blue "创建一键配置命令..."
+    
+    # 创建执行脚本
+    cat > $HOME/.backpack_bot/config-bot.sh << 'EOF'
+#!/bin/bash
+cd "$HOME/.backpack_bot"
+python3 menu.py
+EOF
+    
+    # 设置执行权限
+    chmod +x $HOME/.backpack_bot/config-bot.sh
+    
+    # 创建别名命令
+    SHELL_RC=""
+    if [ -f "$HOME/.bashrc" ]; then
+        SHELL_RC="$HOME/.bashrc"
+    elif [ -f "$HOME/.zshrc" ]; then
+        SHELL_RC="$HOME/.zshrc"
+    fi
+    
+    if [ -n "$SHELL_RC" ]; then
+        # 检查是否已存在别名
+        if ! grep -q "alias backpack-config=" "$SHELL_RC"; then
+            echo "# Backpack Grid Trading Bot 一键配置命令" >> "$SHELL_RC"
+            echo "alias backpack-config='$HOME/.backpack_bot/config-bot.sh'" >> "$SHELL_RC"
+        fi
+        print_green "命令别名已添加到 $SHELL_RC"
+        print_yellow "请运行 'source $SHELL_RC' 或重新打开终端以激活命令"
+    else
+        print_yellow "无法找到 shell 配置文件，请手动添加以下命令到你的 shell 配置文件："
+        print_yellow "alias backpack-config='$HOME/.backpack_bot/config-bot.sh'"
+    fi
+    
+    print_green "一键配置命令创建完成！"
 }
 
 # 主函数
@@ -193,9 +276,15 @@ main() {
     # 设置 PM2
     setup_pm2
     
+    # 创建一键配置命令
+    create_config_command
+    
     # 运行菜单
     print_green "========================================"
     print_green "      安装完成！自动启动机器人菜单...   "
+    print_green "========================================"
+    print_green "您可以随时使用 'backpack-config' 命令进入配置菜单"
+    print_green "交易机器人将通过 PM2 管理，确保其稳定运行"
     print_green "========================================"
     
     # 自动启动菜单

@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# 颜色输出函数
+print_green() {
+    echo -e "\033[32m$1\033[0m"
+}
+
+print_blue() {
+    echo -e "\033[34m$1\033[0m"
+}
+
+print_red() {
+    echo -e "\033[31m$1\033[0m"
+}
+
+print_yellow() {
+    echo -e "\033[33m$1\033[0m"
+}
+
+CONFIG_DIR="$HOME/.backpack_bot"
+MENU_SCRIPT="$CONFIG_DIR/menu.py"
+
+# 检查配置目录是否存在
+if [ ! -d "$CONFIG_DIR" ]; then
+    print_yellow "配置目录不存在，正在创建..."
+    mkdir -p "$CONFIG_DIR"
+    
+    # 需要执行安装脚本
+    print_yellow "请先执行安装脚本 improved_install.sh"
+    exit 1
+fi
+
+# 检查菜单脚本是否存在
+if [ ! -f "$MENU_SCRIPT" ]; then
+    print_red "菜单脚本不存在，请先执行安装脚本 improved_install.sh"
+    exit 1
+fi
+
+# 检查Python3是否可用
+if ! command -v python3 &> /dev/null; then
+    print_red "未检测到 Python3，请确保已安装 Python3"
+    exit 1
+fi
+
+# 进入配置目录并启动菜单
+cd "$CONFIG_DIR"
+print_blue "启动 Backpack 交易机器人配置菜单..."
+python3 menu.py 
