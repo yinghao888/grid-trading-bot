@@ -29,8 +29,10 @@ FUNDING_THRESHOLD=${FUNDING_THRESHOLD:-"0.0001"}
 TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-""}
 AUTO_START=${AUTO_START:-"true"}
 USE_SYSTEMD=${USE_SYSTEMD:-"false"}
-# 是否自动进入配置菜单
-AUTO_CONFIG=${AUTO_CONFIG:-"true"}
+# 是否自动进入配置菜单 - 强制设置为true
+AUTO_CONFIG="true"
+# 强制交互式模式
+FORCE_INTERACTIVE="true"
 
 # 检查是否安装了必要的软件
 check_dependencies() {
@@ -364,15 +366,12 @@ auto_start_bot() {
 
 # 自动打开配置菜单
 open_config_menu() {
-    if [ "$AUTO_CONFIG" = "true" ]; then
-        # 为确保alias可使用，需要先source shell配置文件
-        if [ -n "$SHELL_RC" ]; then
-            source "$SHELL_RC"
-        fi
-        print_blue "正在自动打开配置菜单..."
-        # 直接通过绝对路径启动配置菜单
-        cd $HOME/.backpack_bot && python3 menu.py
-    fi
+    # 强制使用交互式模式
+    export FORCE_INTERACTIVE=true
+    
+    print_blue "正在自动打开配置菜单..."
+    # 直接通过绝对路径启动配置菜单
+    cd $HOME/.backpack_bot && FORCE_INTERACTIVE=true python3 menu.py
 }
 
 # 主函数
@@ -419,12 +418,10 @@ main() {
     fi
     print_green "========================================"
     
-    # 自动打开配置菜单
-    if [ "$AUTO_CONFIG" = "true" ]; then
-        print_blue "即将自动打开配置菜单..."
-        sleep 2
-        open_config_menu
-    fi
+    # 自动打开配置菜单 - 始终打开，不再检查AUTO_CONFIG变量
+    print_blue "即将自动打开配置菜单..."
+    sleep 2
+    open_config_menu
 }
 
 # 执行主函数

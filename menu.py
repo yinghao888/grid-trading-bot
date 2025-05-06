@@ -243,7 +243,8 @@ def configure_telegram(telegram_id=None):
     else:
         print_red("未输入 ID，Telegram 配置未更改。")
     
-    if not telegram_id and ENV['is_interactive']:  # 只有在交互模式下才等待用户输入
+    # 移除交互式检查，始终等待用户输入
+    if not telegram_id: # 只有在非参数模式下才等待用户输入
         safe_input("按 Enter 键返回主菜单...", "")
 
 # 配置交易所 API（支持命令行参数）
@@ -270,7 +271,8 @@ def configure_exchange_api(api_key=None, api_secret=None):
     else:
         print_red("API Key 或 Secret 不能为空！配置未更改。")
     
-    if not (api_key and api_secret) and ENV['is_interactive']:  # 只有在交互模式下才等待用户输入
+    # 移除交互式检查，始终等待用户输入
+    if not (api_key and api_secret): # 只有在非参数模式下才等待用户输入
         safe_input("按 Enter 键返回主菜单...", "")
 
 # 选择交易对（支持命令行参数）
@@ -308,12 +310,7 @@ def select_trading_pairs(trading_pairs=None):
             print_red("未提供有效的交易对！")
             return
     
-    # 非交互模式下，不执行下面的交互式配置
-    if not ENV['is_interactive']:
-        print_yellow("非交互模式下不支持交互式选择交易对")
-        print_yellow("请使用命令行参数: --trading-pairs=ETH_USDC_PERP,SOL_USDC_PERP")
-        return
-    
+    # 移除非交互式检查，确保交互式操作始终可用
     # 交互式配置
     current_pairs = config.get("trading", "symbols").split(",")
     
@@ -397,12 +394,7 @@ def configure_trading_params(position_limit=None, funding_threshold=None):
         save_config(config)
         return
     
-    # 非交互模式下，不执行下面的交互式配置
-    if not ENV['is_interactive']:
-        print_yellow("非交互模式下不支持交互式配置交易参数")
-        print_yellow("请使用命令行参数: --position-limit=0.001 --funding-threshold=0.0001")
-        return
-    
+    # 移除非交互检查，确保交互式操作始终可用
     # 交互式配置
     os.system('clear' if os.name != 'nt' else 'cls')
     print_blue("配置交易参数")
