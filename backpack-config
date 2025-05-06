@@ -24,11 +24,14 @@ MENU_SCRIPT="$CONFIG_DIR/menu.py"
 DIRECT_CONFIG=false
 
 # 检测是否在终端中运行
-if [ -t 0 ]; then
-    INTERACTIVE=true
-else
-    INTERACTIVE=false
-fi
+# 强制设置为交互式模式，无论实际环境如何
+INTERACTIVE=true
+# 如果需要恢复原始检测，可以取消下面的注释
+# if [ -t 0 ]; then
+#     INTERACTIVE=true
+# else
+#     INTERACTIVE=false
+# fi
 
 # 检测是否使用systemd
 if [ -f "$HOME/.config/systemd/user/backpack-bot.service" ]; then
@@ -59,7 +62,8 @@ fi
 
 # 检查是否有需要直接传递到Python脚本的命令行参数
 PASS_ARGS=""
-FORCE_INTERACTIVE=false
+# 强制交互式模式
+FORCE_INTERACTIVE=true
 
 for arg in "$@"; do
     if [[ "$arg" == "--api-key="* ]] || 
@@ -213,19 +217,8 @@ cd "$CONFIG_DIR"
 print_blue "启动 Backpack 交易机器人配置菜单..."
 
 # 设置环境变量处理交互模式
-if [ "$INTERACTIVE" = true ] || [ "$FORCE_INTERACTIVE" = true ]; then
-    export FORCE_INTERACTIVE=true
-else
-    export NON_INTERACTIVE=true
-    print_yellow "检测到非交互式环境，将使用非交互模式"
-    
-    # 如果没有传递参数，显示帮助并退出
-    if [ -z "$PASS_ARGS" ]; then
-        print_yellow "在非交互模式下，请提供命令行参数："
-        print_yellow "示例: backpack-config --api-key=YOUR_KEY --api-secret=YOUR_SECRET --start-bot"
-        exit 1
-    fi
-fi
+# 强制使用交互式模式
+export FORCE_INTERACTIVE=true
 
 # 输出调试信息
 if [ "$DEBUG" = true ]; then

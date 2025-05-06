@@ -15,6 +15,17 @@ import argparse
 # 环境检测
 def check_environment():
     """检测当前环境是否适合运行交互式菜单"""
+    # 直接返回交互式环境设置，忽略其他检测
+    return {
+        'is_terminal': True,
+        'has_args': len(sys.argv) > 1,
+        'non_interactive': False,
+        'force_interactive': True,
+        'is_interactive': True  # 强制为交互式
+    }
+    
+    # 以下代码已被禁用，始终返回交互式模式
+    """
     # 检查是否运行在终端中
     is_terminal = os.isatty(sys.stdin.fileno()) if hasattr(sys, 'stdin') and hasattr(sys.stdin, 'fileno') else False
     
@@ -37,6 +48,7 @@ def check_environment():
         'force_interactive': force_interactive,
         'is_interactive': (is_terminal and not non_interactive) or force_interactive
     }
+    """
 
 # 全局环境状态
 ENV = check_environment()
@@ -73,10 +85,10 @@ def safe_input(prompt="", default=""):
     Returns:
         用户输入或默认值
     """
-    # 如果环境变量指定了非交互式模式，或者没有终端，直接返回默认值
-    if not ENV['is_interactive']:
-        print(f"{prompt} [非交互式模式，使用默认值: '{default}']")
-        return default
+    # 移除非交互式检查，强制使用交互式输入
+    # if not ENV['is_interactive']:
+    #     print(f"{prompt} [非交互式模式，使用默认值: '{default}']")
+    #     return default
     
     try:
         # 强制刷新输出缓冲区，确保提示显示
@@ -787,14 +799,6 @@ def main_menu():
     # 检查是否有任何命令行参数被使用
     if any(vars(args).values()):
         return  # 如果使用了任何命令行参数，则不启动交互式菜单
-
-    # 检查是否是非交互式环境且没有参数
-    if not ENV['is_interactive'] and not any(vars(args).values()):
-        print_yellow("检测到非交互式环境，但未提供命令行参数")
-        print_yellow("请使用命令行参数配置机器人，例如:")
-        print_yellow("  python menu.py --api-key YOUR_KEY --api-secret YOUR_SECRET --start-bot")
-        print_yellow("  或设置FORCE_INTERACTIVE=true环境变量强制交互式模式")
-        return
 
     # 检查是否首次运行
     config = load_config()
