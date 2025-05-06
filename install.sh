@@ -98,95 +98,130 @@ if [ ! -d "$CONFIG_DIR" ]; then
     echo -e "  ✓ 已创建配置目录: $CONFIG_DIR"
 fi
 
+# 创建日志目录
+mkdir -p "$CONFIG_DIR/logs"
+echo -e "  ✓ 已创建日志目录: $CONFIG_DIR/logs"
+
 echo ""
 echo -e "${BLUE}[3/5] 正在安装依赖...${NC}"
 
-# 更新软件包列表
-echo -e "  正在更新软件包列表..."
-$SUDO_CMD apt-get update -qq || error_exit "更新软件包列表失败"
+# 完整清理APT缓存和修复损坏的依赖
+echo -e "  正在清理系统包管理器..."
+$SUDO_CMD apt-get clean -y
+$SUDO_CMD apt-get autoclean -y
+$SUDO_CMD apt-get autoremove -y
+$SUDO_CMD dpkg --configure -a
+$SUDO_CMD apt-get update -qq
 
 # 修复潜在的破损包
 echo -e "  正在修复潜在的软件包问题..."
 $SUDO_CMD apt-get install -f -y -qq
 
-# 确保必要的工具可用
-echo -e "  正在安装基础工具包..."
-$SUDO_CMD apt-get install -y apt-utils software-properties-common -qq
+# 使用最小化安装策略
+echo -e "  使用最小化安装策略，避免依赖冲突..."
 
-# 分步安装依赖，以便更好地追踪错误
-echo -e "  正在安装Python3..."
-$SUDO_CMD apt-get install -y python3 -qq || {
-    echo -e "${YELLOW}⚠ Python3安装遇到问题，尝试替代方法...${NC}"
-    # 尝试添加deadsnakes PPA作为替代方案
-    $SUDO_CMD add-apt-repository -y ppa:deadsnakes/ppa
-    $SUDO_CMD apt-get update -qq
-    $SUDO_CMD apt-get install -y python3.8 -qq || error_exit "Python3安装失败"
-    echo -e "  ✓ Python3.8已成功安装"
-}
-
-echo -e "  正在安装Python3-pip..."
-$SUDO_CMD apt-get install -y python3-pip -qq || {
-    echo -e "${YELLOW}⚠ Python3-pip安装遇到问题，尝试替代方法...${NC}"
-    # 尝试使用get-pip.py脚本作为替代方案
-    curl -s https://bootstrap.pypa.io/get-pip.py -o "$TEMP_DIR/get-pip.py"
-    python3 "$TEMP_DIR/get-pip.py" --user || error_exit "Python3-pip安装失败"
-    echo -e "  ✓ Python3-pip已通过替代方法安装"
-}
-
-echo -e "  正在安装Node.js..."
-if ! command -v node &> /dev/null; then
-    echo -e "  Node.js未安装，尝试使用nodesource脚本..."
-    curl -sL https://deb.nodesource.com/setup_14.x -o "$TEMP_DIR/nodesource_setup.sh"
-    $SUDO_CMD bash "$TEMP_DIR/nodesource_setup.sh"
-    $SUDO_CMD apt-get install -y nodejs -qq || error_exit "Node.js安装失败"
+# 安装Python3 - 使用多种方法
+echo -e "  正在安装Python环境..."
+if ! command -v python3 &> /dev/null; then
+    # 尝试方法1：直接安装
+    $SUDO_CMD apt-get install -y python3 python3-pip -qq || {
+        # 尝试方法2：使用deadsnakes PPA
+        $SUDO_CMD add-apt-repository -y ppa:deadsnakes/ppa
+        $SUDO_CMD apt-get update -qq
+        $SUDO_CMD apt-get install -y python3.8 python3.8-venv python3-pip -qq || {
+            # 尝试方法3：使用miniconda
+            echo -e "${YELLOW}⚠ 使用系统包安装Python失败，正在尝试使用Miniconda...${NC}"
+            curl -s -L -o "$TEMP_DIR/miniconda.sh" https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+            bash "$TEMP_DIR/miniconda.sh" -b -p "$HOME/miniconda"
+            export PATH="$HOME/miniconda/bin:$PATH"
+            echo 'export PATH="$HOME/miniconda/bin:$PATH"' >> "$HOME/.bashrc"
+            hash -r
+            
+            # 创建一个专用的conda环境
+            conda create -y -n backpack python=3.8
+            export PATH="$HOME/miniconda/envs/backpack/bin:$PATH"
+            echo 'export PATH="$HOME/miniconda/envs/backpack/bin:$PATH"' >> "$HOME/.bashrc"
+            
+            # 更新pip
+            pip install --upgrade pip
+            
+            echo -e "  ✓ 已使用Miniconda安装Python环境"
+        }
+    }
 else
-    echo -e "  ✓ Node.js已安装"
+    echo -e "  ✓ Python3已安装"
 fi
 
-echo -e "  正在安装npm..."
-$SUDO_CMD apt-get install -y npm -qq || {
-    echo -e "${YELLOW}⚠ npm安装遇到问题，将使用Node.js自带的npm...${NC}"
+# 确保pip可用并安装必要的Python包
+echo -e "  正在安装Python依赖..."
+python3 -m pip install --upgrade pip || {
+    curl -s https://bootstrap.pypa.io/get-pip.py -o "$TEMP_DIR/get-pip.py"
+    python3 "$TEMP_DIR/get-pip.py" --user
 }
 
-echo -e "  正在安装jq和curl..."
-$SUDO_CMD apt-get install -y jq curl -qq || error_exit "安装jq和curl失败"
+# 使用pip安装所需的Python包
+python3 -m pip install --user aiohttp requests || {
+    echo -e "${YELLOW}⚠ pip安装失败，尝试使用easy_install...${NC}"
+    # 如果pip安装失败，尝试使用easy_install
+    $SUDO_CMD apt-get install -y python3-setuptools -qq
+    easy_install3 --user aiohttp requests || error_exit "无法安装Python依赖"
+}
+echo -e "  ✓ Python依赖安装成功"
 
-# 检查Python版本
-PYTHON_VER=$(python3 --version 2>/dev/null)
-if [ $? -eq 0 ]; then
-    echo -e "  ✓ 已安装Python: $PYTHON_VER"
+# 安装Node.js和npm - 避免系统包，使用NVM
+echo -e "  正在安装Node.js环境..."
+# 检查是否已安装Node.js
+if ! command -v node &> /dev/null; then
+    echo -e "  安装NVM (Node版本管理器)..."
+    # 下载并安装NVM
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash
+    
+    # 添加NVM到当前环境
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    
+    # 安装Node.js
+    nvm install 14 || nvm install --lts
+    
+    # 确保nvm在登录时也可用
+    echo 'export NVM_DIR="$HOME/.nvm"' >> "$HOME/.bashrc"
+    echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> "$HOME/.bashrc"
 else
-    error_exit "Python安装失败"
+    echo -e "  ✓ Node.js已安装"
 fi
 
 # 安装PM2
 echo -e "  正在安装PM2..."
 if ! command -v pm2 &> /dev/null; then
-    echo -e "  PM2未安装，开始安装..."
-    $SUDO_CMD npm install pm2 -g -s || { 
-        echo -e "${YELLOW}⚠ 使用npm安装PM2失败，尝试使用yarn...${NC}"
-        # 尝试使用yarn作为替代方案
-        if ! command -v yarn &> /dev/null; then
-            $SUDO_CMD npm install -g yarn -s
-        fi
-        $SUDO_CMD yarn global add pm2 || error_exit "PM2安装失败" 
-    }
-fi
-
-PM2_VER=$(pm2 --version 2>/dev/null)
-if [ $? -eq 0 ]; then
-    echo -e "  ✓ 已安装PM2: $PM2_VER"
+    if command -v npm &> /dev/null; then
+        npm install -g pm2 || npm install --unsafe-perm -g pm2 || {
+            # 如果npm安装失败，尝试使用yarn
+            npm install -g yarn
+            yarn global add pm2 || error_exit "PM2安装失败"
+        }
+    elif command -v nvm &> /dev/null; then
+        nvm install-latest-npm
+        npm install -g pm2 || error_exit "PM2安装失败"
+    else
+        error_exit "无法安装PM2，Node.js或npm不可用"
+    fi
+    
+    echo -e "  ✓ PM2安装成功"
 else
-    error_exit "PM2安装验证失败"
+    echo -e "  ✓ PM2已安装"
 fi
 
-# 安装必要的Python包
-echo -e "  正在安装Python依赖..."
-pip3 install --no-cache-dir --quiet --user aiohttp requests || {
-    echo -e "${YELLOW}⚠ 使用pip3安装Python依赖失败，尝试使用pip...${NC}"
-    pip install --no-cache-dir --quiet --user aiohttp requests || error_exit "安装Python依赖失败"
-}
-echo -e "  ✓ Python依赖安装成功"
+# 安装jq (不使用系统包)
+echo -e "  正在安装jq工具..."
+if ! command -v jq &> /dev/null; then
+    # 直接下载jq二进制文件
+    curl -s -L -o "$HOME/.local/bin/jq" https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64
+    chmod +x "$HOME/.local/bin/jq"
+    export PATH="$HOME/.local/bin:$PATH"
+    echo -e "  ✓ jq已安装到$HOME/.local/bin/jq"
+else
+    echo -e "  ✓ jq已安装"
+fi
 
 # 配置选项
 echo ""
@@ -240,6 +275,11 @@ if [ ! -d "$CONFIG_DIR" ]; then
     exit 1
 fi
 
+# 加载可能的环境设置
+[ -s "$HOME/.nvm/nvm.sh" ] && \. "$HOME/.nvm/nvm.sh"
+[ -s "$HOME/.bashrc" ] && \. "$HOME/.bashrc"
+export PATH="$HOME/.local/bin:$PATH"
+
 # 检查PM2是否运行backpack_bot
 PM2_STATUS=$(pm2 list | grep backpack_bot)
 if [[ "$PM2_STATUS" == *"online"* ]]; then
@@ -255,15 +295,33 @@ if [ ! -f "$CONFIG_DIR/config.json" ]; then
 fi
 
 # 验证配置文件格式
-if ! jq . "$CONFIG_DIR/config.json" > /dev/null 2>&1; then
-    echo "错误: 配置文件格式不正确，请检查JSON格式!"
-    exit 1
+if command -v jq &> /dev/null; then
+    if ! jq . "$CONFIG_DIR/config.json" > /dev/null 2>&1; then
+        echo "错误: 配置文件格式不正确，请检查JSON格式!"
+        exit 1
+    fi
+fi
+
+# 如果jq不可用，使用Python验证JSON
+if ! command -v jq &> /dev/null; then
+    python3 -c "import json; json.load(open('$CONFIG_DIR/config.json'))" 2>/dev/null
+    if [ $? -ne 0 ]; then
+        echo "错误: 配置文件格式不正确，请检查JSON格式!"
+        exit 1
+    fi
 fi
 
 # 检查API密钥是否配置
-API_KEY=$(jq -r '.backpack.api_key' "$CONFIG_DIR/config.json")
-API_SECRET=$(jq -r '.backpack.api_secret' "$CONFIG_DIR/config.json")
-TELEGRAM_CHAT_ID=$(jq -r '.telegram.chat_id' "$CONFIG_DIR/config.json")
+if command -v jq &> /dev/null; then
+    API_KEY=$(jq -r '.backpack.api_key' "$CONFIG_DIR/config.json")
+    API_SECRET=$(jq -r '.backpack.api_secret' "$CONFIG_DIR/config.json")
+    TELEGRAM_CHAT_ID=$(jq -r '.telegram.chat_id' "$CONFIG_DIR/config.json")
+else
+    # 如果jq不可用，使用Python读取配置
+    API_KEY=$(python3 -c "import json; print(json.load(open('$CONFIG_DIR/config.json'))['backpack']['api_key'])")
+    API_SECRET=$(python3 -c "import json; print(json.load(open('$CONFIG_DIR/config.json'))['backpack']['api_secret'])")
+    TELEGRAM_CHAT_ID=$(python3 -c "import json; print(json.load(open('$CONFIG_DIR/config.json'))['telegram']['chat_id'])")
+fi
 
 if [ -z "$API_KEY" ] || [ "$API_KEY" == "null" ]; then
     echo "错误: Backpack API Key 未配置，请先运行 'backpack-config' 进行配置!"
@@ -277,6 +335,15 @@ fi
 
 if [ -z "$TELEGRAM_CHAT_ID" ] || [ "$TELEGRAM_CHAT_ID" == "null" ]; then
     echo "错误: Telegram Chat ID 未配置，请先运行 'backpack-config' 进行配置!"
+    exit 1
+fi
+
+# 确保Python环境可用
+if ! command -v python3 &> /dev/null; then
+    echo "错误: Python3未安装或不在PATH中!"
+    echo -e "如果您使用了Miniconda安装，请确保已激活环境："
+    echo -e "  source ~/.bashrc"
+    echo -e "  conda activate backpack"
     exit 1
 fi
 
@@ -295,6 +362,11 @@ cat > "$HOME/.local/bin/backpack-config" << 'EOF'
 
 CONFIG_DIR="$HOME/.backpack_bot"
 CONFIG_FILE="$CONFIG_DIR/config.json"
+
+# 加载可能的环境设置
+[ -s "$HOME/.nvm/nvm.sh" ] && \. "$HOME/.nvm/nvm.sh"
+[ -s "$HOME/.bashrc" ] && \. "$HOME/.bashrc"
+export PATH="$HOME/.local/bin:$PATH"
 
 # 颜色定义
 YELLOW='\033[1;33m'
@@ -332,10 +404,20 @@ function edit_config {
         fi
         
         # 验证配置文件格式
-        if ! jq . "$CONFIG_FILE" > /dev/null 2>&1; then
-            echo -e "${RED}警告: 配置文件格式不正确，请检查JSON格式!${NC}"
+        if command -v jq &> /dev/null; then
+            if ! jq . "$CONFIG_FILE" > /dev/null 2>&1; then
+                echo -e "${RED}警告: 配置文件格式不正确，请检查JSON格式!${NC}"
+            else
+                echo -e "${GREEN}✓ 配置文件格式正确${NC}"
+            fi
         else
-            echo -e "${GREEN}✓ 配置文件格式正确${NC}"
+            # 如果jq不可用，使用Python验证JSON
+            python3 -c "import json; json.load(open('$CONFIG_FILE'))" 2>/dev/null
+            if [ $? -ne 0 ]; then
+                echo -e "${RED}警告: 配置文件格式不正确，请检查JSON格式!${NC}"
+            else
+                echo -e "${GREEN}✓ 配置文件格式正确${NC}"
+            fi
         fi
     else
         echo -e "${RED}错误: 配置文件不存在:${NC} $CONFIG_FILE"
@@ -349,43 +431,17 @@ function start_bot {
         return 1
     fi
     
-    # 检查配置文件是否有效
-    if ! jq . "$CONFIG_FILE" > /dev/null 2>&1; then
-        echo -e "${RED}错误: 配置文件格式不正确，请检查JSON格式!${NC}"
+    # 确保Python环境可用
+    if ! command -v python3 &> /dev/null; then
+        echo -e "${RED}错误: Python3未安装或不在PATH中!${NC}"
+        echo -e "如果您使用了Miniconda安装，请确保已激活环境："
+        echo -e "  source ~/.bashrc"
+        echo -e "  conda activate backpack"
         return 1
     fi
     
-    # 检查必要的配置项是否存在
-    API_KEY=$(jq -r '.backpack.api_key' "$CONFIG_FILE")
-    API_SECRET=$(jq -r '.backpack.api_secret' "$CONFIG_FILE")
-    TELEGRAM_CHAT_ID=$(jq -r '.telegram.chat_id' "$CONFIG_FILE")
-    
-    if [ -z "$API_KEY" ] || [ "$API_KEY" == "null" ]; then
-        echo -e "${RED}错误: Backpack API Key 未配置，请先配置!${NC}"
-        return 1
-    fi
-    
-    if [ -z "$API_SECRET" ] || [ "$API_SECRET" == "null" ]; then
-        echo -e "${RED}错误: Backpack API Secret 未配置，请先配置!${NC}"
-        return 1
-    fi
-    
-    if [ -z "$TELEGRAM_CHAT_ID" ] || [ "$TELEGRAM_CHAT_ID" == "null" ]; then
-        echo -e "${RED}错误: Telegram Chat ID 未配置，请先配置!${NC}"
-        return 1
-    fi
-    
-    # 启动机器人
-    cd "$CONFIG_DIR"
-    pm2 start backpack_bot.py --name backpack_bot --interpreter python3 -- --run
-    
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✓ 交易机器人已启动!${NC}"
-        echo -e "使用 '${CYAN}pm2 logs backpack_bot${NC}' 查看日志"
-    else
-        echo -e "${RED}错误: 启动交易机器人失败!${NC}"
-        return 1
-    fi
+    # 调用启动脚本
+    bash "$HOME/.local/bin/backpack-start"
 }
 
 function stop_bot {
