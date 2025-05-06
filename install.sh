@@ -105,9 +105,51 @@ echo -e "${BLUE}[3/5] 正在安装依赖...${NC}"
 echo -e "  正在更新软件包列表..."
 $SUDO_CMD apt-get update -qq || error_exit "更新软件包列表失败"
 
-# 安装必要的系统包
-echo -e "  正在安装必要的系统包..."
-$SUDO_CMD apt-get install -y python3 python3-pip nodejs npm curl jq -qq || error_exit "安装系统依赖失败"
+# 修复潜在的破损包
+echo -e "  正在修复潜在的软件包问题..."
+$SUDO_CMD apt-get install -f -y -qq
+
+# 确保必要的工具可用
+echo -e "  正在安装基础工具包..."
+$SUDO_CMD apt-get install -y apt-utils software-properties-common -qq
+
+# 分步安装依赖，以便更好地追踪错误
+echo -e "  正在安装Python3..."
+$SUDO_CMD apt-get install -y python3 -qq || {
+    echo -e "${YELLOW}⚠ Python3安装遇到问题，尝试替代方法...${NC}"
+    # 尝试添加deadsnakes PPA作为替代方案
+    $SUDO_CMD add-apt-repository -y ppa:deadsnakes/ppa
+    $SUDO_CMD apt-get update -qq
+    $SUDO_CMD apt-get install -y python3.8 -qq || error_exit "Python3安装失败"
+    echo -e "  ✓ Python3.8已成功安装"
+}
+
+echo -e "  正在安装Python3-pip..."
+$SUDO_CMD apt-get install -y python3-pip -qq || {
+    echo -e "${YELLOW}⚠ Python3-pip安装遇到问题，尝试替代方法...${NC}"
+    # 尝试使用get-pip.py脚本作为替代方案
+    curl -s https://bootstrap.pypa.io/get-pip.py -o "$TEMP_DIR/get-pip.py"
+    python3 "$TEMP_DIR/get-pip.py" --user || error_exit "Python3-pip安装失败"
+    echo -e "  ✓ Python3-pip已通过替代方法安装"
+}
+
+echo -e "  正在安装Node.js..."
+if ! command -v node &> /dev/null; then
+    echo -e "  Node.js未安装，尝试使用nodesource脚本..."
+    curl -sL https://deb.nodesource.com/setup_14.x -o "$TEMP_DIR/nodesource_setup.sh"
+    $SUDO_CMD bash "$TEMP_DIR/nodesource_setup.sh"
+    $SUDO_CMD apt-get install -y nodejs -qq || error_exit "Node.js安装失败"
+else
+    echo -e "  ✓ Node.js已安装"
+fi
+
+echo -e "  正在安装npm..."
+$SUDO_CMD apt-get install -y npm -qq || {
+    echo -e "${YELLOW}⚠ npm安装遇到问题，将使用Node.js自带的npm...${NC}"
+}
+
+echo -e "  正在安装jq和curl..."
+$SUDO_CMD apt-get install -y jq curl -qq || error_exit "安装jq和curl失败"
 
 # 检查Python版本
 PYTHON_VER=$(python3 --version 2>/dev/null)
@@ -119,13 +161,31 @@ fi
 
 # 安装PM2
 echo -e "  正在安装PM2..."
-$SUDO_CMD npm install pm2 -g -s || error_exit "安装PM2失败"
+if ! command -v pm2 &> /dev/null; then
+    echo -e "  PM2未安装，开始安装..."
+    $SUDO_CMD npm install pm2 -g -s || { 
+        echo -e "${YELLOW}⚠ 使用npm安装PM2失败，尝试使用yarn...${NC}"
+        # 尝试使用yarn作为替代方案
+        if ! command -v yarn &> /dev/null; then
+            $SUDO_CMD npm install -g yarn -s
+        fi
+        $SUDO_CMD yarn global add pm2 || error_exit "PM2安装失败" 
+    }
+fi
+
 PM2_VER=$(pm2 --version 2>/dev/null)
-echo -e "  ✓ 已安装PM2: $PM2_VER"
+if [ $? -eq 0 ]; then
+    echo -e "  ✓ 已安装PM2: $PM2_VER"
+else
+    error_exit "PM2安装验证失败"
+fi
 
 # 安装必要的Python包
 echo -e "  正在安装Python依赖..."
-pip3 install --no-cache-dir --quiet aiohttp requests || error_exit "安装Python依赖失败"
+pip3 install --no-cache-dir --quiet --user aiohttp requests || {
+    echo -e "${YELLOW}⚠ 使用pip3安装Python依赖失败，尝试使用pip...${NC}"
+    pip install --no-cache-dir --quiet --user aiohttp requests || error_exit "安装Python依赖失败"
+}
 echo -e "  ✓ Python依赖安装成功"
 
 # 配置选项
