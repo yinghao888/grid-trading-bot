@@ -12,6 +12,35 @@ import re
 from datetime import datetime
 import argparse
 
+# 环境检测
+def check_environment():
+    """检测当前环境是否适合运行交互式菜单"""
+    # 检查是否运行在终端中
+    is_terminal = os.isatty(sys.stdin.fileno()) if hasattr(sys, 'stdin') and hasattr(sys.stdin, 'fileno') else False
+    
+    # 检查是否有命令行参数（如果有，可能是非交互式调用）
+    has_args = len(sys.argv) > 1
+    
+    # 获取环境变量
+    non_interactive = os.environ.get('NON_INTERACTIVE', 'false').lower() == 'true'
+    force_interactive = os.environ.get('FORCE_INTERACTIVE', 'false').lower() == 'true'
+    
+    # 输出调试信息
+    if os.environ.get('DEBUG', 'false').lower() == 'true':
+        print(f"环境检测: 终端={is_terminal}, 命令行参数={has_args}, 非交互式={non_interactive}, 强制交互式={force_interactive}")
+    
+    # 返回环境信息
+    return {
+        'is_terminal': is_terminal,
+        'has_args': has_args,
+        'non_interactive': non_interactive,
+        'force_interactive': force_interactive,
+        'is_interactive': (is_terminal and not non_interactive) or force_interactive
+    }
+
+# 全局环境状态
+ENV = check_environment()
+
 # 颜色输出函数
 def print_green(text):
     print("\033[32m{}\033[0m".format(text))
@@ -34,19 +63,65 @@ if not os.path.exists(CONFIG_DIR):
     os.makedirs(CONFIG_DIR)
 
 # 安全输入函数，确保在任何环境下都能获取用户输入
-def safe_input(prompt=""):
+def safe_input(prompt="", default=""):
+    """增强版安全输入函数
+    
+    Args:
+        prompt: 输入提示
+        default: 非交互模式下的默认值
+        
+    Returns:
+        用户输入或默认值
+    """
+    # 如果环境变量指定了非交互式模式，或者没有终端，直接返回默认值
+    if not ENV['is_interactive']:
+        print(f"{prompt} [非交互式模式，使用默认值: '{default}']")
+        return default
+    
     try:
         # 强制刷新输出缓冲区，确保提示显示
-        print(prompt, end="", flush=True)
-        return input()
+        sys.stdout.write(prompt)
+        sys.stdout.flush()
+        
+        # 设置超时（仅在支持的环境中）
+        try:
+            import signal
+            
+            # 检查平台，在macOS上信号处理有所不同
+            if sys.platform == 'darwin':  # macOS
+                # 在macOS上使用更简单的方法，不依赖信号超时
+                return input()
+            else:
+                def timeout_handler(signum, frame):
+                    raise TimeoutError("输入超时")
+                
+                # 设置10秒超时
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(10)
+                
+                user_input = input()
+                
+                # 取消超时
+                signal.alarm(0)
+                return user_input
+        except (ImportError, AttributeError):
+            # 不支持信号模块的环境，直接尝试输入
+            return input()
     except EOFError:
         # 如果发生EOFError，说明可能在非交互式环境中
-        # 但我们仍然希望继续运行，所以返回空字符串
-        print("\n检测到输入问题，采用默认值继续")
-        return ""
+        print("\n检测到输入问题 (EOFError)，采用默认值继续")
+        return default
+    except TimeoutError as e:
+        # 输入超时
+        print(f"\n{e}，采用默认值继续")
+        return default
+    except KeyboardInterrupt:
+        # 用户中断
+        print("\n用户中断，采用默认值继续")
+        return default
     except Exception as e:
-        print_red(f"输入错误: {e}")
-        return ""
+        print_red(f"输入错误: {str(e)}")
+        return default
 
 # 解析命令行参数
 def parse_args():
@@ -67,10 +142,33 @@ def parse_args():
     parser.add_argument('--funding-threshold', help='设置资金费率阈值')
     return parser.parse_args()
 
+# 检查可用的进程管理工具
+def get_process_manager():
+    """检测可用的进程管理工具"""
+    # 首先检查是否有systemd用户服务
+    systemd_service = os.path.expanduser("~/.config/systemd/user/backpack-bot.service")
+    if os.path.exists(systemd_service):
+        # 验证systemctl命令是否可用
+        try:
+            subprocess.run(["systemctl", "--user", "--version"], 
+                          capture_output=True, check=False)
+            return "systemd"
+        except (subprocess.SubprocessError, FileNotFoundError):
+            pass
+    
+    # 然后检查PM2是否可用
+    try:
+        subprocess.run(["pm2", "--version"], capture_output=True, check=False)
+        return "pm2"
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+    
+    # 最后检查Python直接运行是否可行
+    return "direct"
+
 # 检测是否使用systemd
 def is_using_systemd():
-    systemd_service = os.path.expanduser("~/.config/systemd/user/backpack-bot.service")
-    return os.path.exists(systemd_service)
+    return get_process_manager() == "systemd"
 
 # 加载配置文件
 def load_config():
@@ -124,7 +222,7 @@ def configure_telegram(telegram_id=None):
         print_yellow(f"使用提供的Telegram ID: {chat_id}")
     else:
         print_yellow("请输入您的 Telegram 用户 ID (可通过 @userinfobot 获取):")
-        chat_id = safe_input().strip()
+        chat_id = safe_input("", config.get("telegram", "chat_id", fallback="")).strip()
     
     if chat_id:
         config.set("telegram", "chat_id", chat_id)
@@ -133,8 +231,8 @@ def configure_telegram(telegram_id=None):
     else:
         print_red("未输入 ID，Telegram 配置未更改。")
     
-    if not telegram_id:  # 只有在交互模式下才等待用户输入
-        safe_input("按 Enter 键返回主菜单...")
+    if not telegram_id and ENV['is_interactive']:  # 只有在交互模式下才等待用户输入
+        safe_input("按 Enter 键返回主菜单...", "")
 
 # 配置交易所 API（支持命令行参数）
 def configure_exchange_api(api_key=None, api_secret=None):
@@ -147,10 +245,10 @@ def configure_exchange_api(api_key=None, api_secret=None):
         print_yellow(f"使用提供的API密钥和密钥")
     else:
         print_yellow("请输入您的 API Key:")
-        api_key = safe_input().strip()
+        api_key = safe_input("", config.get("api", "api_key", fallback="")).strip()
         
         print_yellow("请输入您的 API Secret:")
-        api_secret = safe_input().strip()
+        api_secret = safe_input("", config.get("api", "api_secret", fallback="")).strip()
     
     if api_key and api_secret:
         config.set("api", "api_key", api_key)
@@ -160,8 +258,8 @@ def configure_exchange_api(api_key=None, api_secret=None):
     else:
         print_red("API Key 或 Secret 不能为空！配置未更改。")
     
-    if not (api_key and api_secret):  # 只有在交互模式下才等待用户输入
-        safe_input("按 Enter 键返回主菜单...")
+    if not (api_key and api_secret) and ENV['is_interactive']:  # 只有在交互模式下才等待用户输入
+        safe_input("按 Enter 键返回主菜单...", "")
 
 # 选择交易对（支持命令行参数）
 def select_trading_pairs(trading_pairs=None):
@@ -198,6 +296,12 @@ def select_trading_pairs(trading_pairs=None):
             print_red("未提供有效的交易对！")
             return
     
+    # 非交互模式下，不执行下面的交互式配置
+    if not ENV['is_interactive']:
+        print_yellow("非交互模式下不支持交互式选择交易对")
+        print_yellow("请使用命令行参数: --trading-pairs=ETH_USDC_PERP,SOL_USDC_PERP")
+        return
+    
     # 交互式配置
     current_pairs = config.get("trading", "symbols").split(",")
     
@@ -218,11 +322,11 @@ def select_trading_pairs(trading_pairs=None):
         print("S. 保存并返回")
         print("Q. 不保存返回")
         
-        choice = safe_input("\n请选择操作: ").strip().upper()
+        choice = safe_input("\n请选择操作: ", "Q").strip().upper()
         
         if choice == 'A':
             print_yellow("输入要添加的交易对编号(多个用空格分隔):")
-            selections = safe_input().strip().split()
+            selections = safe_input("", "").strip().split()
             for sel in selections:
                 try:
                     idx = int(sel) - 1
@@ -234,7 +338,7 @@ def select_trading_pairs(trading_pairs=None):
         
         elif choice == 'R':
             print_yellow("输入要移除的交易对编号(多个用空格分隔):")
-            selections = safe_input().strip().split()
+            selections = safe_input("", "").strip().split()
             for sel in selections:
                 try:
                     idx = int(sel) - 1
@@ -281,6 +385,12 @@ def configure_trading_params(position_limit=None, funding_threshold=None):
         save_config(config)
         return
     
+    # 非交互模式下，不执行下面的交互式配置
+    if not ENV['is_interactive']:
+        print_yellow("非交互模式下不支持交互式配置交易参数")
+        print_yellow("请使用命令行参数: --position-limit=0.001 --funding-threshold=0.0001")
+        return
+    
     # 交互式配置
     os.system('clear' if os.name != 'nt' else 'cls')
     print_blue("配置交易参数")
@@ -302,50 +412,59 @@ def configure_trading_params(position_limit=None, funding_threshold=None):
     print("S. 保存并返回")
     print("Q. 不保存返回")
     
-    choice = safe_input("\n请选择操作: ").strip().upper()
+    choice = safe_input("\n请选择操作: ", "Q").strip().upper()
     
     if choice == '1':
-        print_yellow("请输入仓位限制 (例如 0.001):")
-        value = safe_input().strip()
+        current = config.get("trading", "position_limit")
+        print_yellow(f"请输入仓位限制 (例如 0.001, 当前值: {current}):")
+        value = safe_input("", current).strip()
         if value:
             config.set("trading", "position_limit", value)
     elif choice == '2':
-        print_yellow("请输入资金费率阈值 (例如 0.0001):")
-        value = safe_input().strip()
+        current = config.get("trading", "funding_threshold")
+        print_yellow(f"请输入资金费率阈值 (例如 0.0001, 当前值: {current}):")
+        value = safe_input("", current).strip()
         if value:
             config.set("trading", "funding_threshold", value)
     elif choice == '3':
-        print_yellow("请输入检查间隔(秒) (例如 300):")
-        value = safe_input().strip()
+        current = config.get("trading", "check_interval")
+        print_yellow(f"请输入检查间隔(秒) (例如 300, 当前值: {current}):")
+        value = safe_input("", current).strip()
         if value:
             config.set("trading", "check_interval", value)
     elif choice == '4':
-        print_yellow("请输入杠杆倍数 (例如 20):")
-        value = safe_input().strip()
+        current = config.get("trading", "leverage")
+        print_yellow(f"请输入杠杆倍数 (例如 20, 当前值: {current}):")
+        value = safe_input("", current).strip()
         if value:
             config.set("trading", "leverage", value)
     elif choice == '5':
-        print_yellow("请输入利润目标 (例如 0.0002):")
-        value = safe_input().strip()
+        current = config.get("trading", "profit_target")
+        print_yellow(f"请输入利润目标 (例如 0.0002, 当前值: {current}):")
+        value = safe_input("", current).strip()
         if value:
             config.set("trading", "profit_target", value)
     elif choice == '6':
-        print_yellow("请输入止损比例 (例如 0.1):")
-        value = safe_input().strip()
+        current = config.get("trading", "stop_loss")
+        print_yellow(f"请输入止损比例 (例如 0.1, 当前值: {current}):")
+        value = safe_input("", current).strip()
         if value:
             config.set("trading", "stop_loss", value)
     elif choice == '7':
-        print_yellow("请输入冷却时间(分钟) (例如 30):")
-        value = safe_input().strip()
+        current = config.get("trading", "cooldown_minutes")
+        print_yellow(f"请输入冷却时间(分钟) (例如 30, 当前值: {current}):")
+        value = safe_input("", current).strip()
         if value:
             config.set("trading", "cooldown_minutes", value)
     elif choice == 'S':
         save_config(config)
         print_green("交易参数已保存!")
         time.sleep(1)
+        return
     elif choice == 'Q':
         print_yellow("未保存更改")
         time.sleep(1)
+        return
     
     # 递归调用自己，直到用户选择返回
     if choice not in ['S', 'Q']:
@@ -355,31 +474,39 @@ def configure_trading_params(position_limit=None, funding_threshold=None):
 def stop_bot():
     print_blue("停止交易机器人")
     
-    use_systemd = is_using_systemd()
+    process_manager = get_process_manager()
     
-    if use_systemd:
+    if process_manager == "systemd":
         # 使用systemd停止
         try:
             subprocess.run(["systemctl", "--user", "stop", "backpack-bot"], check=True)
             print_green("交易机器人已停止")
         except subprocess.CalledProcessError:
             print_red("停止失败，请手动检查状态")
-    else:
+        except FileNotFoundError:
+            print_red("未找到systemctl命令，无法使用systemd停止")
+    elif process_manager == "pm2":
         # 使用PM2停止
-        result = subprocess.run(["pm2", "stop", "backpack_bot"], capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            print_green("交易机器人已停止")
-        else:
-            print_red(f"停止失败: {result.stderr}")
-            print_yellow("尝试使用备用方法停止...")
-            try:
-                os.system("pm2 stop backpack_bot")
-                print_green("交易机器人可能已停止，请检查状态")
-            except:
-                print_red("所有停止方法失败，请手动检查")
+        try:
+            result = subprocess.run(["pm2", "stop", "backpack_bot"], capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                print_green("交易机器人已停止")
+            else:
+                print_red(f"停止失败: {result.stderr}")
+                print_yellow("尝试使用备用方法停止...")
+                try:
+                    os.system("pm2 stop backpack_bot")
+                    print_green("交易机器人可能已停止，请检查状态")
+                except:
+                    print_red("所有停止方法失败，请手动检查")
+        except FileNotFoundError:
+            print_red("未找到PM2命令，无法使用PM2停止")
+    else:
+        print_red("未找到支持的进程管理工具（systemd或PM2）")
+        print_yellow("请手动停止交易机器人进程")
     
-    safe_input("按 Enter 键返回主菜单...")
+    safe_input("按 Enter 键返回主菜单...", "")
 
 # 启动脚本
 def start_bot():
@@ -390,18 +517,18 @@ def start_bot():
     if (config["api"]["api_key"] == "YOUR_API_KEY" or 
         config["api"]["api_secret"] == "YOUR_API_SECRET"):
         print_red("错误: 未配置 API 密钥，请先完成配置")
-        safe_input("按 Enter 键返回主菜单...")
+        safe_input("按 Enter 键返回主菜单...", "")
         return
     
     if not config["telegram"]["chat_id"]:
         print_yellow("警告: 未配置 Telegram ID，将无法接收通知")
-        proceed = safe_input("是否继续启动? (y/n): ").strip().lower()
+        proceed = safe_input("是否继续启动? (y/n): ", "n").strip().lower()
         if proceed != 'y':
             return
     
-    use_systemd = is_using_systemd()
+    process_manager = get_process_manager()
     
-    if use_systemd:
+    if process_manager == "systemd":
         # 使用systemd启动
         try:
             print_yellow("使用systemd启动机器人...")
@@ -410,7 +537,9 @@ def start_bot():
             print_green("systemd将自动管理交易机器人，确保其稳定运行")
         except subprocess.CalledProcessError:
             print_red("启动失败，请手动检查错误")
-    else:
+        except FileNotFoundError:
+            print_red("未找到systemctl命令，无法使用systemd启动")
+    elif process_manager == "pm2":
         # 确保ecosystem.config.js文件存在
         ecosystem_file = os.path.join(CONFIG_DIR, "ecosystem.config.js")
         if not os.path.exists(ecosystem_file):
@@ -433,34 +562,40 @@ def start_bot():
 """)
         
         # 启动机器人
-        print_yellow("正在使用PM2启动机器人，请稍等...")
-        result = subprocess.run(["pm2", "start", ecosystem_file], 
-                                capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            print_green("交易机器人已启动")
-            print_green("PM2将自动管理交易机器人，确保其稳定运行")
-        else:
-            print_red(f"启动失败: {result.stderr}")
-            print_yellow("尝试使用备用方法启动...")
-            try:
-                os.system(f"pm2 start {ecosystem_file}")
-                print_green("交易机器人可能已启动，请检查状态")
-            except:
-                print_red("所有启动方法失败，请手动检查")
-        
-        # 保存PM2进程列表，确保开机自启
         try:
-            os.system("pm2 save")
-        except:
-            print_yellow("无法保存PM2进程列表，可能需要手动执行 'pm2 save'")
+            print_yellow("正在使用PM2启动机器人，请稍等...")
+            result = subprocess.run(["pm2", "start", ecosystem_file], 
+                                  capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                print_green("交易机器人已启动")
+                print_green("PM2将自动管理交易机器人，确保其稳定运行")
+            else:
+                print_red(f"启动失败: {result.stderr}")
+                print_yellow("尝试使用备用方法启动...")
+                try:
+                    os.system(f"pm2 start {ecosystem_file}")
+                    print_green("交易机器人可能已启动，请检查状态")
+                except:
+                    print_red("所有启动方法失败，请手动检查")
+            
+            # 保存PM2进程列表，确保开机自启
+            try:
+                os.system("pm2 save")
+            except:
+                print_yellow("无法保存PM2进程列表，可能需要手动执行 'pm2 save'")
+        except FileNotFoundError:
+            print_red("未找到PM2命令，无法使用PM2启动")
+    else:
+        print_red("未找到支持的进程管理工具（systemd或PM2）")
+        print_yellow("请先安装PM2或配置systemd来管理交易机器人")
     
-    safe_input("按 Enter 键返回主菜单...")
+    safe_input("按 Enter 键返回主菜单...", "")
 
 # 删除脚本
 def remove_bot():
     print_red("警告: 此操作将删除交易机器人及其所有配置")
-    confirm = safe_input("确认删除? (输入 'DELETE' 确认): ").strip()
+    confirm = safe_input("确认删除? (输入 'DELETE' 确认): ", "").strip()
     
     if confirm == "DELETE":
         use_systemd = is_using_systemd()
@@ -492,7 +627,7 @@ def remove_bot():
     else:
         print_yellow("取消删除操作")
     
-    safe_input("按 Enter 键返回主菜单...")
+    safe_input("按 Enter 键返回主菜单...", "")
 
 # 一键配置向导
 def quick_setup_wizard():
@@ -506,17 +641,17 @@ def quick_setup_wizard():
     # 1. 配置API密钥
     print_blue("\n第1步：配置交易所API密钥")
     print_yellow("请输入您的 API Key:")
-    api_key = input().strip()
+    api_key = safe_input("", config.get("api", "api_key", fallback="")).strip()
     
     print_yellow("请输入您的 API Secret:")
-    api_secret = input().strip()
+    api_secret = safe_input("", config.get("api", "api_secret", fallback="")).strip()
     
     if api_key and api_secret:
         config.set("api", "api_key", api_key)
         config.set("api", "api_secret", api_secret)
     else:
         print_red("API Key 或 Secret 不能为空！无法继续配置。")
-        input("按 Enter 键返回主菜单...")
+        safe_input("按 Enter 键返回主菜单...", "")
         return
     
     # 2. 配置Telegram
@@ -524,7 +659,7 @@ def quick_setup_wizard():
     print_blue("机器人将使用默认令牌：7685502184:AAGxaIdwiTr0WpPDeIGmc9fgbdeSKxgXtEw")
     print_yellow("请输入您的 Telegram 用户 ID (可通过 @userinfobot 获取，若不需要可留空):")
     
-    chat_id = input().strip()
+    chat_id = safe_input("", config.get("telegram", "chat_id", fallback="")).strip()
     if chat_id:
         config.set("telegram", "chat_id", chat_id)
     
@@ -533,7 +668,7 @@ def quick_setup_wizard():
     print_yellow("可用交易对：BTC_USDC_PERP, ETH_USDC_PERP, SOL_USDC_PERP, NEAR_USDC_PERP, AVAX_USDC_PERP, DOGE_USDC_PERP")
     print_yellow("请输入您要交易的对（用逗号分隔多个，如：ETH_USDC_PERP,SOL_USDC_PERP）:")
     
-    pairs = input().strip()
+    pairs = safe_input("", config.get("trading", "symbols", fallback="ETH_USDC_PERP")).strip()
     if pairs:
         config.set("trading", "symbols", pairs)
     
@@ -543,14 +678,61 @@ def quick_setup_wizard():
     
     # 5. 询问是否立即启动
     print_yellow("\n是否立即启动交易机器人? (y/n):")
-    start_now = input().strip().lower()
+    start_now = safe_input("", "n").strip().lower()
     
     if start_now == 'y':
         # 启动机器人
         start_bot()
     else:
         print_yellow("您可以稍后通过主菜单启动机器人")
-        input("按 Enter 键返回主菜单...")
+        safe_input("按 Enter 键返回主菜单...", "")
+
+# 查看日志
+def view_logs():
+    print_blue("查看交易机器人日志")
+    
+    log_dir = os.path.expanduser("~/.backpack_bot")
+    logs = [f for f in os.listdir(log_dir) if f.startswith("backpack_bot_") and f.endswith(".log")]
+    
+    if not logs:
+        print_red("未找到日志文件")
+        safe_input("按 Enter 键返回主菜单...", "")
+        return
+    
+    # 按修改时间排序
+    logs.sort(key=lambda x: os.path.getmtime(os.path.join(log_dir, x)), reverse=True)
+    
+    print_yellow("\n可用日志文件:")
+    for i, log in enumerate(logs, 1):
+        log_path = os.path.join(log_dir, log)
+        log_size = os.path.getsize(log_path) / 1024  # KB
+        mtime = datetime.fromtimestamp(os.path.getmtime(log_path))
+        print(f"{i}. {log} - {log_size:.1f}KB, 最后修改: {mtime.strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    print_yellow("\n请选择查看的日志文件编号 (0 表示返回):")
+    selection = safe_input("", "0").strip()
+    
+    try:
+        idx = int(selection)
+        if idx == 0:
+            return
+        
+        if 1 <= idx <= len(logs):
+            log_file = os.path.join(log_dir, logs[idx-1])
+            
+            # 使用分页查看日志
+            if os.name == 'nt':  # Windows
+                os.system(f"type {log_file} | more")
+            else:  # Unix/Linux/macOS
+                os.system(f"cat {log_file} | less -R")
+                
+            print_yellow("\n日志查看完毕")
+        else:
+            print_red("无效的选择")
+    except ValueError:
+        print_red("请输入有效数字")
+    
+    safe_input("按 Enter 键返回主菜单...", "")
 
 # 主菜单
 def main_menu():
@@ -606,6 +788,14 @@ def main_menu():
     if any(vars(args).values()):
         return  # 如果使用了任何命令行参数，则不启动交互式菜单
 
+    # 检查是否是非交互式环境且没有参数
+    if not ENV['is_interactive'] and not any(vars(args).values()):
+        print_yellow("检测到非交互式环境，但未提供命令行参数")
+        print_yellow("请使用命令行参数配置机器人，例如:")
+        print_yellow("  python menu.py --api-key YOUR_KEY --api-secret YOUR_SECRET --start-bot")
+        print_yellow("  或设置FORCE_INTERACTIVE=true环境变量强制交互式模式")
+        return
+
     # 检查是否首次运行
     config = load_config()
     first_run = (config["api"]["api_key"] == "YOUR_API_KEY")
@@ -613,7 +803,7 @@ def main_menu():
     if first_run:
         try:
             print_yellow("检测到首次运行，是否启动快速配置向导? (y/n):")
-            start_wizard = safe_input().strip().lower()
+            start_wizard = safe_input("", "y").strip().lower()
             if start_wizard == 'y':
                 quick_setup_wizard()
         except Exception as e:
@@ -665,7 +855,7 @@ def main_menu():
             print("8. 删除机器人")
             print("0. 退出")
             
-            choice = safe_input("\n请输入选项: ").strip()
+            choice = safe_input("\n请输入选项: ", "0").strip()
             
             if choice == '1':
                 quick_setup_wizard()
@@ -696,7 +886,7 @@ def main_menu():
             print_red(f"发生错误: {e}")
             print_yellow("按Enter键继续...")
             try:
-                safe_input()
+                safe_input("", "")
             except:
                 pass
 

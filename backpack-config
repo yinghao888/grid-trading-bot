@@ -23,6 +23,13 @@ MENU_SCRIPT="$CONFIG_DIR/menu.py"
 # 是否为直接配置模式
 DIRECT_CONFIG=false
 
+# 检测是否在终端中运行
+if [ -t 0 ]; then
+    INTERACTIVE=true
+else
+    INTERACTIVE=false
+fi
+
 # 检测是否使用systemd
 if [ -f "$HOME/.config/systemd/user/backpack-bot.service" ]; then
     USE_SYSTEMD=true
@@ -40,6 +47,9 @@ if [ "$1" == "help" ] || [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     print_blue "  backpack-config stop      - 停止交易机器人"
     print_blue "  backpack-config status    - 查看交易机器人状态"
     print_blue "  backpack-config logs      - 查看交易机器人日志"
+    print_blue "  backpack-config --api-key=KEY --api-secret=SECRET - 设置API密钥"
+    print_blue "  backpack-config --telegram-id=ID - 设置Telegram ID"
+    print_blue "  backpack-config --force-interactive - 强制交互式模式"
     exit 0
 fi
 
@@ -47,6 +57,33 @@ if [ "$1" == "config" ]; then
     DIRECT_CONFIG=true
 fi
 
+# 检查是否有需要直接传递到Python脚本的命令行参数
+PASS_ARGS=""
+FORCE_INTERACTIVE=false
+
+for arg in "$@"; do
+    if [[ "$arg" == "--api-key="* ]] || 
+       [[ "$arg" == "--api-secret="* ]] || 
+       [[ "$arg" == "--telegram-id="* ]] || 
+       [[ "$arg" == "--trading-pairs="* ]] || 
+       [[ "$arg" == "--position-limit="* ]] ||
+       [[ "$arg" == "--funding-threshold="* ]] ||
+       [[ "$arg" == "--start-bot" ]] ||
+       [[ "$arg" == "--stop-bot" ]]; then
+        PASS_ARGS="$PASS_ARGS $arg"
+    fi
+    
+    if [[ "$arg" == "--force-interactive" ]]; then
+        FORCE_INTERACTIVE=true
+    fi
+    
+    if [[ "$arg" == "--debug" ]]; then
+        DEBUG=true
+        PASS_ARGS="$PASS_ARGS $arg"
+    fi
+done
+
+# 直接命令执行
 if [ "$1" == "start" ]; then
     print_blue "正在启动交易机器人..."
     if [ "$USE_SYSTEMD" = true ]; then
@@ -175,5 +212,28 @@ fi
 cd "$CONFIG_DIR"
 print_blue "启动 Backpack 交易机器人配置菜单..."
 
+# 设置环境变量处理交互模式
+if [ "$INTERACTIVE" = true ] || [ "$FORCE_INTERACTIVE" = true ]; then
+    export FORCE_INTERACTIVE=true
+else
+    export NON_INTERACTIVE=true
+    print_yellow "检测到非交互式环境，将使用非交互模式"
+    
+    # 如果没有传递参数，显示帮助并退出
+    if [ -z "$PASS_ARGS" ]; then
+        print_yellow "在非交互模式下，请提供命令行参数："
+        print_yellow "示例: backpack-config --api-key=YOUR_KEY --api-secret=YOUR_SECRET --start-bot"
+        exit 1
+    fi
+fi
+
+# 输出调试信息
+if [ "$DEBUG" = true ]; then
+    echo "环境信息:"
+    echo "交互式: $INTERACTIVE"
+    echo "强制交互式: $FORCE_INTERACTIVE"
+    echo "传递参数: $PASS_ARGS"
+fi
+
 # 直接运行Python脚本
-python3 menu.py 
+python3 menu.py $PASS_ARGS 
