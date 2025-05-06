@@ -32,6 +32,21 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "config.ini")
 if not os.path.exists(CONFIG_DIR):
     os.makedirs(CONFIG_DIR)
 
+# 安全输入函数，确保在任何环境下都能获取用户输入
+def safe_input(prompt=""):
+    try:
+        # 强制刷新输出缓冲区，确保提示显示
+        print(prompt, end="", flush=True)
+        return input()
+    except EOFError:
+        # 如果发生EOFError，说明可能在非交互式环境中
+        # 但我们仍然希望继续运行，所以返回空字符串
+        print("\n检测到输入问题，采用默认值继续")
+        return ""
+    except Exception as e:
+        print_red(f"输入错误: {e}")
+        return ""
+
 # 检测是否使用systemd
 def is_using_systemd():
     systemd_service = os.path.expanduser("~/.config/systemd/user/backpack-bot.service")
@@ -84,7 +99,7 @@ def configure_telegram():
     print_blue("机器人将使用默认令牌：7685502184:AAGxaIdwiTr0WpPDeIGmc9fgbdeSKxgXtEw")
     print_yellow("请输入您的 Telegram 用户 ID (可通过 @userinfobot 获取):")
     
-    chat_id = input().strip()
+    chat_id = safe_input().strip()
     
     if chat_id:
         config.set("telegram", "chat_id", chat_id)
@@ -93,7 +108,7 @@ def configure_telegram():
     else:
         print_red("未输入 ID，Telegram 配置未更改。")
     
-    input("按 Enter 键返回主菜单...")
+    safe_input("按 Enter 键返回主菜单...")
 
 # 配置交易所 API
 def configure_exchange_api():
@@ -101,10 +116,10 @@ def configure_exchange_api():
     
     print_blue("配置 Backpack 交易所 API")
     print_yellow("请输入您的 API Key:")
-    api_key = input().strip()
+    api_key = safe_input().strip()
     
     print_yellow("请输入您的 API Secret:")
-    api_secret = input().strip()
+    api_secret = safe_input().strip()
     
     if api_key and api_secret:
         config.set("api", "api_key", api_key)
@@ -114,7 +129,7 @@ def configure_exchange_api():
     else:
         print_red("API Key 或 Secret 不能为空！配置未更改。")
     
-    input("按 Enter 键返回主菜单...")
+    safe_input("按 Enter 键返回主菜单...")
 
 # 选择交易对
 def select_trading_pairs():
@@ -151,11 +166,11 @@ def select_trading_pairs():
         print("S. 保存并返回")
         print("Q. 不保存返回")
         
-        choice = input("\n请选择操作: ").strip().upper()
+        choice = safe_input("\n请选择操作: ").strip().upper()
         
         if choice == 'A':
             print_yellow("输入要添加的交易对编号(多个用空格分隔):")
-            selections = input().strip().split()
+            selections = safe_input().strip().split()
             for sel in selections:
                 try:
                     idx = int(sel) - 1
@@ -167,7 +182,7 @@ def select_trading_pairs():
         
         elif choice == 'R':
             print_yellow("输入要移除的交易对编号(多个用空格分隔):")
-            selections = input().strip().split()
+            selections = safe_input().strip().split()
             for sel in selections:
                 try:
                     idx = int(sel) - 1
@@ -216,7 +231,7 @@ def view_logs():
             print("2. 查看更多日志")
             print("Q. 返回主菜单")
             
-            choice = input("\n请选择操作: ").strip().upper()
+            choice = safe_input("\n请选择操作: ").strip().upper()
             
             if choice == '1':
                 view_logs()  # 刷新
@@ -227,7 +242,7 @@ def view_logs():
                 return
         except Exception as e:
             print_red(f"获取systemd日志失败: {e}")
-            input("按 Enter 键返回主菜单...")
+            safe_input("按 Enter 键返回主菜单...")
         return
     
     # 查找最新日志文件
@@ -253,7 +268,7 @@ def view_logs():
     
     if not logs and not pm2_logs:
         print_red("未找到日志文件")
-        input("按 Enter 键返回主菜单...")
+        safe_input("按 Enter 键返回主菜单...")
         return
     
     # 按日期排序本地日志
@@ -291,7 +306,7 @@ def view_logs():
         print("2. 查看全部日志")
         print("Q. 返回主菜单")
         
-        choice = input("\n请选择操作: ").strip().upper()
+        choice = safe_input("\n请选择操作: ").strip().upper()
         
         if choice == '1':
             continue
@@ -328,41 +343,41 @@ def configure_trading_params():
     print("S. 保存并返回")
     print("Q. 不保存返回")
     
-    choice = input("\n请选择操作: ").strip().upper()
+    choice = safe_input("\n请选择操作: ").strip().upper()
     
     if choice == '1':
         print_yellow("请输入仓位限制 (例如 0.001):")
-        value = input().strip()
+        value = safe_input().strip()
         if value:
             config.set("trading", "position_limit", value)
     elif choice == '2':
         print_yellow("请输入资金费率阈值 (例如 0.0001):")
-        value = input().strip()
+        value = safe_input().strip()
         if value:
             config.set("trading", "funding_threshold", value)
     elif choice == '3':
         print_yellow("请输入检查间隔(秒) (例如 300):")
-        value = input().strip()
+        value = safe_input().strip()
         if value:
             config.set("trading", "check_interval", value)
     elif choice == '4':
         print_yellow("请输入杠杆倍数 (例如 20):")
-        value = input().strip()
+        value = safe_input().strip()
         if value:
             config.set("trading", "leverage", value)
     elif choice == '5':
         print_yellow("请输入利润目标 (例如 0.0002):")
-        value = input().strip()
+        value = safe_input().strip()
         if value:
             config.set("trading", "profit_target", value)
     elif choice == '6':
         print_yellow("请输入止损比例 (例如 0.1):")
-        value = input().strip()
+        value = safe_input().strip()
         if value:
             config.set("trading", "stop_loss", value)
     elif choice == '7':
         print_yellow("请输入冷却时间(分钟) (例如 30):")
-        value = input().strip()
+        value = safe_input().strip()
         if value:
             config.set("trading", "cooldown_minutes", value)
     elif choice == 'S':
@@ -405,7 +420,7 @@ def stop_bot():
             except:
                 print_red("所有停止方法失败，请手动检查")
     
-    input("按 Enter 键返回主菜单...")
+    safe_input("按 Enter 键返回主菜单...")
 
 # 启动脚本
 def start_bot():
@@ -416,12 +431,12 @@ def start_bot():
     if (config["api"]["api_key"] == "YOUR_API_KEY" or 
         config["api"]["api_secret"] == "YOUR_API_SECRET"):
         print_red("错误: 未配置 API 密钥，请先完成配置")
-        input("按 Enter 键返回主菜单...")
+        safe_input("按 Enter 键返回主菜单...")
         return
     
     if not config["telegram"]["chat_id"]:
         print_yellow("警告: 未配置 Telegram ID，将无法接收通知")
-        proceed = input("是否继续启动? (y/n): ").strip().lower()
+        proceed = safe_input("是否继续启动? (y/n): ").strip().lower()
         if proceed != 'y':
             return
     
@@ -481,12 +496,12 @@ def start_bot():
         except:
             print_yellow("无法保存PM2进程列表，可能需要手动执行 'pm2 save'")
     
-    input("按 Enter 键返回主菜单...")
+    safe_input("按 Enter 键返回主菜单...")
 
 # 删除脚本
 def remove_bot():
     print_red("警告: 此操作将删除交易机器人及其所有配置")
-    confirm = input("确认删除? (输入 'DELETE' 确认): ").strip()
+    confirm = safe_input("确认删除? (输入 'DELETE' 确认): ").strip()
     
     if confirm == "DELETE":
         use_systemd = is_using_systemd()
@@ -518,7 +533,7 @@ def remove_bot():
     else:
         print_yellow("取消删除操作")
     
-    input("按 Enter 键返回主菜单...")
+    safe_input("按 Enter 键返回主菜单...")
 
 # 一键配置向导
 def quick_setup_wizard():
@@ -587,13 +602,9 @@ def main_menu():
     if first_run:
         try:
             print_yellow("检测到首次运行，是否启动快速配置向导? (y/n):")
-            # 使用更兼容的方式处理可能的超时
-            try:
-                start_wizard = input().strip().lower()
-                if start_wizard == 'y':
-                    quick_setup_wizard()
-            except:
-                print_yellow("检测到非交互式环境，跳过快速配置向导")
+            start_wizard = safe_input().strip().lower()
+            if start_wizard == 'y':
+                quick_setup_wizard()
         except Exception as e:
             print_red(f"启动向导时出错: {e}")
             print_yellow("请手动配置您的交易机器人")
@@ -643,12 +654,7 @@ def main_menu():
             print("8. 删除机器人")
             print("0. 退出")
             
-            try:
-                # 使用更兼容的方式处理输入
-                choice = input("\n请输入选项: ").strip()
-            except:
-                print_yellow("检测到非交互式环境，退出菜单")
-                break
+            choice = safe_input("\n请输入选项: ").strip()
             
             if choice == '1':
                 quick_setup_wizard()
@@ -679,7 +685,7 @@ def main_menu():
             print_red(f"发生错误: {e}")
             print_yellow("按Enter键继续...")
             try:
-                input()
+                safe_input()
             except:
                 pass
 
