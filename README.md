@@ -1,154 +1,159 @@
 # Backpack 网格交易机器人
 
-基于Backpack交易所API的网格交易机器人，支持永续合约资金费率套利策略。
+这是一个自动化的网格交易机器人系统，专为Backpack交易所设计。该系统支持全自动配置和启动，可以监控资金费率，并在适当时机进行交易。
 
-## 功能特点
+## 主要特点
 
-1. 自动监控资金费率，在适当时机开仓和平仓
-2. 支持多交易对同时操作
-3. Telegram消息通知
-4. 通过PM2进行进程管理，确保机器人稳定运行
-5. 简单易用的配置菜单
+- **全自动安装与配置**：一键完成所有安装与配置步骤
+- **多种启动方式**：支持PM2和systemd两种启动管理方式
+- **环境变量支持**：可以通过环境变量预设配置，实现完全无交互式部署
+- **多币种支持**：支持多种永续合约的交易
+- **资金费率策略**：基于资金费率的交易策略，自动选择最佳交易时机
+- **自动止盈止损**：内置止盈止损机制，保护资金安全
+- **Telegram通知**：实时接收交易和系统状态通知
 
 ## 快速开始
 
-### 安装
-
-只需运行以下命令即可完成安装：
+### 方法1：一键安装（交互式）
 
 ```bash
 curl -s https://raw.githubusercontent.com/yinghao888/grid-trading-bot/main/improved_install.sh | bash
 ```
 
-安装脚本会自动完成以下操作：
-1. 检查并安装必要的依赖（Python3、Node.js、PM2等）
-2. 下载所有必要的交易机器人文件
-3. 创建配置文件和目录
-4. 设置PM2管理交易机器人
-5. 创建一键配置命令
-
-### 使用方法
-
-安装完成后，您可以使用以下命令随时进入配置菜单：
+安装完成后，使用以下命令进入配置菜单：
 
 ```bash
 backpack-config
 ```
 
-#### 首次使用
+### 方法2：预设配置（非交互式）
 
-首次使用时，建议通过快速配置向导设置机器人：
-1. 运行 `backpack-config` 命令
-2. 选择 "1. 快速配置向导"
-3. 按提示输入API密钥、Telegram ID和交易对
-4. 配置完成后可以选择立即启动或稍后启动
-
-#### 已有配置
-
-如果已经配置过机器人，只需运行 `backpack-config` 命令，通过菜单操作即可：
-- 查看或修改配置
-- 启动或停止交易机器人
-- 查看运行日志
-
-## 交易机器人说明
-
-本机器人使用PM2进行管理，确保其稳定运行并可开机自启。通过菜单配置后，机器人会自动运行，无需人工干预。
-
-## 注意事项
-
-1. API密钥需要有交易权限
-2. 确保账户中有足够的资金
-3. 默认使用较为保守的交易参数，可以根据需要调整
-4. 交易收益和风险与市场行情相关，请谨慎使用
-
-## 安全提示
-
-1. 不要分享您的API密钥
-2. 建议使用专用的交易账户
-3. 定期查看日志，确保机器人正常运行
-
-## 问题解决
-
-如果遇到问题，请尝试以下步骤：
-1. 重启机器人：通过菜单停止后再启动
-2. 检查配置：确保API密钥和其他参数正确
-3. 查看日志：通过菜单中的"查看日志"功能排查错误
-
-如果问题仍未解决，请通过GitHub提交issue。
-
-## 安装步骤
-
-1. 确保已安装Python 3.7或以上版本
-2. 安装所需依赖包：
+可以通过环境变量预设所有配置，实现完全无交互式安装：
 
 ```bash
-pip install aiohttp websockets
+export API_KEY="your_api_key"
+export API_SECRET="your_api_secret"
+export SYMBOLS="ETH_USDC_PERP,SOL_USDC_PERP"
+export POSITION_LIMIT="0.001"
+export FUNDING_THRESHOLD="0.0001"
+export TELEGRAM_CHAT_ID="your_telegram_id"
+export AUTO_START="true"
+export USE_SYSTEMD="false"  # 是否使用systemd而非PM2
+
+curl -s https://raw.githubusercontent.com/yinghao888/grid-trading-bot/main/improved_install.sh | bash
 ```
 
-## 配置文件
+## 使用systemd代替PM2
 
-编辑`config.ini`文件，设置您的API密钥和交易参数：
+如果您希望使用systemd代替PM2来管理交易机器人服务（这会避免安装Node.js和PM2），可以设置：
 
-```ini
+```bash
+export USE_SYSTEMD="true"
+```
+
+## 命令说明
+
+安装完成后，系统提供以下命令：
+
+### 1. backpack-config
+
+交易机器人的主要配置工具，支持以下参数：
+
+- `backpack-config` - 启动交互式配置菜单
+- `backpack-config config` - 直接编辑配置文件
+- `backpack-config start` - 启动交易机器人
+- `backpack-config stop` - 停止交易机器人
+- `backpack-config status` - 查看交易机器人状态
+- `backpack-config logs` - 查看交易机器人日志
+
+### 2. backpack-start
+
+直接启动交易机器人，无需进入配置菜单
+
+## 配置文件说明
+
+配置文件位于 `~/.backpack_bot/config.ini`，包含以下主要设置：
+
+### API 设置
+```
 [api]
-api_key = YOUR_API_KEY  # 替换为您的API密钥
-api_secret = YOUR_API_SECRET  # 替换为您的API密钥
+api_key = YOUR_API_KEY
+api_secret = YOUR_API_SECRET
 base_url = https://api.backpack.exchange
 ws_url = wss://ws.backpack.exchange
+```
 
+### 交易设置
+```
 [trading]
-symbols = BTC_USDC_PERP,ETH_USDC_PERP,SOL_USDC_PERP  # 要交易的永续合约
-position_limit = 0.001  # BTC最大持仓量
-funding_threshold = 0.0001  # 资金费率阈值（正负）
-check_interval = 300  # 检查间隔（秒）
+symbols = ETH_USDC_PERP        # 交易对，多个用逗号分隔
+position_limit = 0.001         # 每次交易的仓位大小
+funding_threshold = 0.0001     # 资金费率阈值
+check_interval = 300           # 检查间隔(秒)
+leverage = 20                  # 杠杆倍数
+profit_target = 0.0002         # 利润目标
+stop_loss = 0.1                # 止损比例
+cooldown_minutes = 30          # 交易冷却时间(分钟)
 ```
 
-## 使用方法
+### Telegram设置
+```
+[telegram]
+bot_token = TOKEN              # 默认已配置
+chat_id = YOUR_CHAT_ID         # 您的Telegram用户ID
+```
 
-1. 编辑配置文件，设置您的API密钥和交易参数
-2. 运行机器人：
+## 系统要求
 
+- Python 3.7+
+- 对于PM2模式：Node.js 14+ 和 PM2
+- 对于systemd模式：系统支持systemd用户服务
+
+## 日志查看
+
+### PM2模式
 ```bash
-python backpack_bot.py
+pm2 logs backpack_bot
 ```
 
-## 工作原理
+### systemd模式
+```bash
+journalctl --user -u backpack-bot -f
+```
 
-1. 机器人会定期检查配置的交易对的资金费率
-2. 当资金费率超过设定的阈值时：
-   - 如果资金费率为正且高于阈值，机器人会做空（因为持有空仓可以收取资金费）
-   - 如果资金费率为负且低于负阈值，机器人会做多（因为持有多仓可以收取资金费）
-   - 如果资金费率在阈值范围内，机器人会平掉现有仓位
-3. 机器人使用WebSocket连接实时监控价格变化
-4. 所有交易活动都会记录在日志文件中
+## 安全建议
 
-## 风险管理
+1. 使用API密钥时，建议只启用交易权限，不要启用提现权限
+2. 定期检查日志确保系统正常运行
+3. 设置合理的仓位限制，避免过大风险
 
-- 仓位大小根据交易对价格自动调整，保持合理风险水平
-- 使用`reduce_only`参数确保平仓操作不会反向开仓
-- 异常情况有完整的错误捕获和处理机制
+## 问题排查
 
-## 高级用法
+如果遇到问题，可以：
 
-### 自定义策略
+1. 检查日志：`backpack-config logs`
+2. 查看机器人状态：`backpack-config status`
+3. 尝试重启机器人：`backpack-config stop` 然后 `backpack-config start`
 
-如果您想调整或扩展交易策略，请修改`backpack_bot.py`中的`handle_position`方法。
+## 卸载
 
-### 添加新交易对
+如需完全卸载机器人：
 
-在配置文件的`symbols`参数中添加新的交易对，格式为`XXX_USDC_PERP`。
+1. 进入配置菜单：`backpack-config`
+2. 选择选项 `8. 删除机器人`
+3. 输入 `DELETE` 确认删除
 
-### 设置风险参数
+也可以手动删除目录：
+```bash
+# 对于PM2模式，还需要删除PM2中的服务
+pm2 delete backpack_bot
 
-调整`position_limit`参数控制最大仓位大小。系统会自动根据不同交易对的价格比例调整实际仓位。
+# 对于systemd模式，需要禁用并删除服务
+systemctl --user disable backpack-bot
+systemctl --user stop backpack-bot
+rm ~/.config/systemd/user/backpack-bot.service
+systemctl --user daemon-reload
 
-## 注意事项
-
-- 交易涉及资金风险，请谨慎使用
-- 建议先使用小仓位测试系统稳定性
-- 确保您的API密钥具有交易权限
-- 定期检查日志文件监控系统运行状态
-
-## 日志文件
-
-系统会自动创建日志文件，格式为`backpack_bot_YYYYMMDD.log`，包含所有交易决策和执行记录。 
+# 然后删除配置目录
+rm -rf ~/.backpack_bot
+``` 

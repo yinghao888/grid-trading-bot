@@ -23,6 +23,13 @@ MENU_SCRIPT="$CONFIG_DIR/menu.py"
 # 是否为直接配置模式
 DIRECT_CONFIG=false
 
+# 检测是否使用systemd
+if [ -f "$HOME/.config/systemd/user/backpack-bot.service" ]; then
+    USE_SYSTEMD=true
+else
+    USE_SYSTEMD=false
+fi
+
 # 处理命令行参数
 if [ "$1" == "help" ] || [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     print_blue "Backpack 交易机器人配置工具"
@@ -42,25 +49,41 @@ fi
 
 if [ "$1" == "start" ]; then
     print_blue "正在启动交易机器人..."
-    pm2 start backpack_bot || print_red "启动失败！"
+    if [ "$USE_SYSTEMD" = true ]; then
+        systemctl --user start backpack-bot || print_red "启动失败！"
+    else
+        pm2 start backpack_bot || print_red "启动失败！"
+    fi
     exit $?
 fi
 
 if [ "$1" == "stop" ]; then
     print_blue "正在停止交易机器人..."
-    pm2 stop backpack_bot || print_red "停止失败！"
+    if [ "$USE_SYSTEMD" = true ]; then
+        systemctl --user stop backpack-bot || print_red "停止失败！"
+    else
+        pm2 stop backpack_bot || print_red "停止失败！"
+    fi
     exit $?
 fi
 
 if [ "$1" == "status" ]; then
     print_blue "交易机器人状态:"
-    pm2 list | grep backpack_bot || print_yellow "交易机器人未运行"
+    if [ "$USE_SYSTEMD" = true ]; then
+        systemctl --user status backpack-bot || print_yellow "交易机器人未运行"
+    else
+        pm2 list | grep backpack_bot || print_yellow "交易机器人未运行"
+    fi
     exit $?
 fi
 
 if [ "$1" == "logs" ]; then
     print_blue "交易机器人日志:"
-    pm2 logs backpack_bot --lines 50 || print_red "无法获取日志！"
+    if [ "$USE_SYSTEMD" = true ]; then
+        journalctl --user -u backpack-bot --lines=50 || print_red "无法获取日志！"
+    else
+        pm2 logs backpack_bot --lines 50 || print_red "无法获取日志！"
+    fi
     exit $?
 fi
 

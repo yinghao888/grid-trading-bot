@@ -1,0 +1,17 @@
+[Unit]
+Description=Backpack Grid Trading Bot
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=%h/.backpack_bot
+ExecStart=/usr/bin/python3 %h/.backpack_bot/backpack_bot.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=backpack-bot
+
+[Install]
+WantedBy=multi-user.target 

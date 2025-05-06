@@ -20,6 +20,16 @@ print_yellow() {
     echo -e "\033[33m$1\033[0m"
 }
 
+# 默认配置值，可以通过环境变量修改
+API_KEY=${API_KEY:-""}
+API_SECRET=${API_SECRET:-""}
+SYMBOLS=${SYMBOLS:-"ETH_USDC_PERP"}
+POSITION_LIMIT=${POSITION_LIMIT:-"0.001"}
+FUNDING_THRESHOLD=${FUNDING_THRESHOLD:-"0.0001"}
+TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-""}
+AUTO_START=${AUTO_START:-"true"}
+USE_SYSTEMD=${USE_SYSTEMD:-"false"}
+
 # 检查是否安装了必要的软件
 check_dependencies() {
     print_blue "检查系统依赖..."
@@ -70,25 +80,28 @@ check_dependencies() {
         fi
     fi
     
-    # 检查 Node.js 和 npm
-    if ! command -v node &> /dev/null; then
-        print_red "未检测到 Node.js，正在安装..."
-        if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-            curl -sL https://deb.nodesource.com/setup_16.x | bash -
-            apt-get install -y nodejs
-        elif [[ "$OSTYPE" == "darwin"* ]]; then
-            # macOS
-            brew install node
-        else
-            print_red "不支持的操作系统，请手动安装 Node.js"
-            exit 1
+    # 如果不使用systemd，则安装Node.js和PM2
+    if [ "$USE_SYSTEMD" != "true" ]; then
+        # 检查 Node.js 和 npm
+        if ! command -v node &> /dev/null; then
+            print_red "未检测到 Node.js，正在安装..."
+            if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+                curl -sL https://deb.nodesource.com/setup_16.x | bash -
+                apt-get install -y nodejs
+            elif [[ "$OSTYPE" == "darwin"* ]]; then
+                # macOS
+                brew install node
+            else
+                print_red "不支持的操作系统，请手动安装 Node.js"
+                exit 1
+            fi
         fi
-    fi
-    
-    # 检查 PM2
-    if ! command -v pm2 &> /dev/null; then
-        print_red "未检测到 PM2，正在安装..."
-        npm install -g pm2
+        
+        # 检查 PM2
+        if ! command -v pm2 &> /dev/null; then
+            print_red "未检测到 PM2，正在安装..."
+            npm install -g pm2
+        fi
     fi
     
     print_green "所有系统依赖已安装完成！"
@@ -125,11 +138,14 @@ download_project_files() {
     print_yellow "下载 ecosystem.config.js..."
     curl -s -o ecosystem.config.js $REPO_URL/ecosystem.config.js
     
-    print_yellow "下载 config.ini..."
-    curl -s -o config.ini $REPO_URL/config.ini
-    
     print_yellow "下载一键配置脚本..."
     curl -s -o backpack-config $REPO_URL/backpack-config
+    
+    # 如果使用systemd，下载服务文件
+    if [ "$USE_SYSTEMD" = "true" ]; then
+        print_yellow "下载systemd服务文件..."
+        curl -s -o backpack-bot.service $REPO_URL/backpack-bot.service
+    fi
     
     # 验证文件是否正确下载
     if [ ! -f menu.py ] || [ ! -s menu.py ]; then
@@ -143,7 +159,7 @@ download_project_files() {
     fi
     
     # 检查其他重要文件
-    for file in backpack_bot.py backpack_api_impl.py telegram_handler.py ecosystem.config.js config.ini backpack-config; do
+    for file in backpack_bot.py backpack_api_impl.py telegram_handler.py backpack-config; do
         if [ ! -f "$file" ] || [ ! -s "$file" ]; then
             print_red "$file 下载失败或文件为空！"
             print_yellow "尝试备用方式下载..."
@@ -155,16 +171,37 @@ download_project_files() {
         fi
     done
     
-    # 设置启动脚本
-    cat > start.sh << 'EOF'
+    # 设置执行权限
+    chmod +x backpack-config
+    
+    # 创建直接启动脚本，根据使用systemd还是PM2来创建不同的脚本
+    if [ "$USE_SYSTEMD" = "true" ]; then
+        cat > direct-start.sh << 'EOF'
 #!/bin/bash
 cd "$HOME/.backpack_bot"
-python3 menu.py
+
+# 使用systemd启动交易机器人
+systemctl --user start backpack-bot
+echo "交易机器人已启动！"
+echo "查看状态: systemctl --user status backpack-bot"
+echo "查看日志: journalctl --user -u backpack-bot -f"
+echo "停止机器人: systemctl --user stop backpack-bot"
 EOF
+    else
+        cat > direct-start.sh << 'EOF'
+#!/bin/bash
+cd "$HOME/.backpack_bot"
+
+# 直接启动交易机器人，无需交互
+pm2 start ecosystem.config.js
+echo "交易机器人已启动！"
+echo "查看状态: pm2 status"
+echo "查看日志: pm2 logs backpack_bot"
+echo "停止机器人: pm2 stop backpack_bot"
+EOF
+    fi
     
-    # 设置执行权限
-    chmod +x start.sh
-    chmod +x backpack-config
+    chmod +x direct-start.sh
     
     # 将配置命令移动到系统路径
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
@@ -186,18 +223,33 @@ EOF
         fi
     else
         print_yellow "无法安装全局命令。您可以通过以下方式启动配置菜单："
-        print_yellow "$HOME/.backpack_bot/start.sh"
+        print_yellow "$HOME/.backpack_bot/backpack-config"
     fi
     
     print_green "项目文件下载完成！"
 }
 
-# 设置 PM2 管理
-setup_pm2() {
-    print_blue "设置 PM2 管理..."
-    
-    # 确保 PM2 配置文件正确，只用于交易机器人
-    cat > $HOME/.backpack_bot/ecosystem.config.js << 'EOF'
+# 设置 PM2 管理或systemd服务
+setup_startup_service() {
+    if [ "$USE_SYSTEMD" = "true" ]; then
+        print_blue "设置 systemd 服务..."
+        
+        # 创建用户systemd目录
+        mkdir -p $HOME/.config/systemd/user/
+        
+        # 复制并定制服务文件
+        sed "s|%h|$HOME|g" $HOME/.backpack_bot/backpack-bot.service > $HOME/.config/systemd/user/backpack-bot.service
+        
+        # 启用服务（但不立即启动）
+        systemctl --user daemon-reload
+        systemctl --user enable backpack-bot.service
+        
+        print_green "systemd 服务配置完成！"
+    else
+        print_blue "设置 PM2 管理..."
+        
+        # 确保 PM2 配置文件正确，只用于交易机器人
+        cat > $HOME/.backpack_bot/ecosystem.config.js << 'EOF'
 module.exports = {
   apps : [{
     name: 'backpack_bot',
@@ -213,26 +265,58 @@ module.exports = {
   }]
 }; 
 EOF
+        
+        # 设置 PM2 开机自启
+        pm2 startup | grep -v "sudo" || true
+        
+        print_green "PM2 配置完成！"
+    fi
+}
+
+# 创建配置文件
+create_config_file() {
+    print_blue "创建配置文件..."
     
-    # 设置 PM2 开机自启
-    pm2 startup | grep -v "sudo" || true
+    # 如果没有提供API密钥，询问用户
+    if [ -z "$API_KEY" ]; then
+        print_yellow "未提供API密钥。请输入Backpack API密钥 (按Enter跳过): "
+        read -r API_KEY
+    fi
     
-    print_green "PM2 配置完成！"
+    if [ -z "$API_SECRET" ]; then
+        print_yellow "未提供API密钥。请输入Backpack API密钥 (按Enter跳过): "
+        read -r API_SECRET
+    fi
+    
+    # 创建配置文件
+    cat > $HOME/.backpack_bot/config.ini << EOF
+[api]
+api_key = ${API_KEY}
+api_secret = ${API_SECRET}
+base_url = https://api.backpack.exchange
+ws_url = wss://ws.backpack.exchange
+
+[trading]
+symbols = ${SYMBOLS}
+position_limit = ${POSITION_LIMIT}
+funding_threshold = ${FUNDING_THRESHOLD}
+check_interval = 300
+leverage = 20
+profit_target = 0.0002
+stop_loss = 0.1
+cooldown_minutes = 30
+
+[telegram]
+bot_token = 7685502184:AAGxaIdwiTr0WpPDeIGmc9fgbdeSKxgXtEw
+chat_id = ${TELEGRAM_CHAT_ID}
+EOF
+    
+    print_green "配置文件已创建！"
 }
 
 # 创建一键配置命令
 create_config_command() {
     print_blue "创建一键配置命令..."
-    
-    # 创建执行脚本
-    cat > $HOME/.backpack_bot/config-bot.sh << 'EOF'
-#!/bin/bash
-cd "$HOME/.backpack_bot"
-python3 menu.py
-EOF
-    
-    # 设置执行权限
-    chmod +x $HOME/.backpack_bot/config-bot.sh
     
     # 创建别名命令
     SHELL_RC=""
@@ -245,17 +329,45 @@ EOF
     if [ -n "$SHELL_RC" ]; then
         # 检查是否已存在别名
         if ! grep -q "alias backpack-config=" "$SHELL_RC"; then
-            echo "# Backpack Grid Trading Bot 一键配置命令" >> "$SHELL_RC"
-            echo "alias backpack-config='$HOME/.backpack_bot/config-bot.sh'" >> "$SHELL_RC"
+            echo "# Backpack Grid Trading Bot 命令" >> "$SHELL_RC"
+            echo "alias backpack-config='$HOME/.backpack_bot/backpack-config'" >> "$SHELL_RC"
+            echo "alias backpack-start='$HOME/.backpack_bot/direct-start.sh'" >> "$SHELL_RC"
         fi
         print_green "命令别名已添加到 $SHELL_RC"
-        print_yellow "请运行 'source $SHELL_RC' 或重新打开终端以激活命令"
     else
         print_yellow "无法找到 shell 配置文件，请手动添加以下命令到你的 shell 配置文件："
-        print_yellow "alias backpack-config='$HOME/.backpack_bot/config-bot.sh'"
+        print_yellow "alias backpack-config='$HOME/.backpack_bot/backpack-config'"
+        print_yellow "alias backpack-start='$HOME/.backpack_bot/direct-start.sh'"
     fi
     
     print_green "一键配置命令创建完成！"
+}
+
+# 自动启动交易机器人
+auto_start_bot() {
+    if [ "$AUTO_START" = "true" ] && [ -n "$API_KEY" ] && [ -n "$API_SECRET" ]; then
+        print_blue "自动启动交易机器人..."
+        cd $HOME/.backpack_bot
+        
+        if [ "$USE_SYSTEMD" = "true" ]; then
+            systemctl --user start backpack-bot
+            print_green "交易机器人已启动！"
+            print_green "查看状态: systemctl --user status backpack-bot"
+            print_green "查看日志: journalctl --user -u backpack-bot -f"
+            print_green "停止机器人: systemctl --user stop backpack-bot"
+        else
+            pm2 start ecosystem.config.js
+            pm2 save
+            print_green "交易机器人已启动！"
+            print_green "查看状态: pm2 status"
+            print_green "查看日志: pm2 logs backpack_bot"
+            print_green "停止机器人: pm2 stop backpack_bot"
+        fi
+    else
+        if [ "$AUTO_START" = "true" ]; then
+            print_yellow "未配置API密钥，无法自动启动交易机器人"
+        fi
+    fi
 }
 
 # 主函数
@@ -273,24 +385,33 @@ main() {
     # 下载项目文件
     download_project_files
     
-    # 设置 PM2
-    setup_pm2
+    # 设置启动服务（PM2或systemd）
+    setup_startup_service
+    
+    # 创建配置文件
+    create_config_file
     
     # 创建一键配置命令
     create_config_command
     
+    # 自动启动交易机器人（如果配置了API密钥）
+    auto_start_bot
+    
     # 显示安装完成消息
     print_green "========================================"
-    print_green "        安装完成！请按照以下步骤操作    "
+    print_green "        安装完成！                    "
     print_green "========================================"
-    print_green "1. 运行命令激活一键配置功能:"
-    print_green "   source $SHELL_RC"
-    print_green ""
-    print_green "2. 然后运行以下命令配置交易机器人:"
-    print_green "   backpack-config"
-    print_green ""
-    print_green "或者直接运行:"
-    print_green "   $HOME/.backpack_bot/start.sh"
+    print_green "配置文件已创建: $HOME/.backpack_bot/config.ini"
+    
+    if [ "$AUTO_START" = "true" ] && [ -n "$API_KEY" ] && [ -n "$API_SECRET" ]; then
+        print_green "交易机器人已自动启动！"
+    else
+        print_green "要手动配置交易机器人，运行:"
+        print_green "   source $SHELL_RC && backpack-config"
+        print_green ""
+        print_green "配置完成后，启动机器人:"
+        print_green "   backpack-start"
+    fi
     print_green "========================================"
 }
 
