@@ -10,7 +10,6 @@ import time
 import asyncio
 import re
 from datetime import datetime
-import signal
 
 # 颜色输出函数
 def print_green(text):
@@ -588,23 +587,13 @@ def main_menu():
     if first_run:
         try:
             print_yellow("检测到首次运行，是否启动快速配置向导? (y/n):")
-            # 设置超时，避免在非交互环境中无限等待
-            
-            def timeout_handler(signum, frame):
-                raise TimeoutError("输入超时")
-            
-            # 设置5秒超时
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(5)
-            
+            # 使用更兼容的方式处理可能的超时
             try:
                 start_wizard = input().strip().lower()
-                signal.alarm(0)  # 取消超时
                 if start_wizard == 'y':
                     quick_setup_wizard()
-            except (TimeoutError, EOFError):
-                print_yellow("非交互式环境或输入超时，跳过快速配置向导")
-                signal.alarm(0)  # 确保取消超时
+            except:
+                print_yellow("检测到非交互式环境，跳过快速配置向导")
         except Exception as e:
             print_red(f"启动向导时出错: {e}")
             print_yellow("请手动配置您的交易机器人")
@@ -655,14 +644,10 @@ def main_menu():
             print("0. 退出")
             
             try:
-                # 设置输入超时
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(60)  # 60秒超时
-                
+                # 使用更兼容的方式处理输入
                 choice = input("\n请输入选项: ").strip()
-                signal.alarm(0)  # 取消超时
-            except (TimeoutError, EOFError):
-                print_yellow("输入超时或非交互环境，退出菜单")
+            except:
+                print_yellow("检测到非交互式环境，退出菜单")
                 break
             
             if choice == '1':

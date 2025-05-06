@@ -87,12 +87,6 @@ if [ "$1" == "logs" ]; then
     exit $?
 fi
 
-# 检查是否在TTY终端中运行
-if [ ! -t 0 ] && [ "$DIRECT_CONFIG" == "false" ]; then
-    print_yellow "警告: 检测到非交互式环境，将切换到直接配置模式"
-    DIRECT_CONFIG=true
-fi
-
 # 检查配置目录是否存在
 if [ ! -d "$CONFIG_DIR" ]; then
     print_yellow "配置目录不存在，正在创建..."
@@ -103,10 +97,33 @@ if [ ! -d "$CONFIG_DIR" ]; then
     exit 1
 fi
 
-# 检查配置文件是否存在
+# 检查配置文件是否存在并尝试创建空配置
 if [ ! -f "$CONFIG_DIR/config.ini" ]; then
-    print_red "未找到配置文件，请先执行安装脚本"
-    exit 1
+    print_yellow "配置文件不存在，创建初始配置..."
+    
+    # 创建初始配置文件
+    cat > "$CONFIG_DIR/config.ini" << EOF
+[api]
+api_key = YOUR_API_KEY
+api_secret = YOUR_API_SECRET
+base_url = https://api.backpack.exchange
+ws_url = wss://ws.backpack.exchange
+
+[trading]
+symbols = ETH_USDC_PERP
+position_limit = 0.001
+funding_threshold = 0.0001
+check_interval = 300
+leverage = 20
+profit_target = 0.0002
+stop_loss = 0.1
+cooldown_minutes = 30
+
+[telegram]
+bot_token = 7685502184:AAGxaIdwiTr0WpPDeIGmc9fgbdeSKxgXtEw
+chat_id = 
+EOF
+    print_green "已创建默认配置文件"
 fi
 
 # 直接编辑配置文件模式
@@ -135,8 +152,17 @@ fi
 
 # 检查菜单脚本是否存在
 if [ ! -f "$MENU_SCRIPT" ]; then
-    print_red "菜单脚本不存在，请先执行安装脚本 improved_install.sh"
-    exit 1
+    print_red "菜单脚本不存在，尝试下载..."
+    REPO_URL="https://raw.githubusercontent.com/yinghao888/grid-trading-bot/main"
+    curl -s -o "$MENU_SCRIPT" "$REPO_URL/menu.py"
+    
+    if [ ! -f "$MENU_SCRIPT" ] || [ ! -s "$MENU_SCRIPT" ]; then
+        print_red "无法下载菜单脚本，请手动下载或重新执行安装程序"
+        exit 1
+    fi
+    
+    chmod +x "$MENU_SCRIPT"
+    print_green "菜单脚本已下载"
 fi
 
 # 检查Python3是否可用
@@ -149,15 +175,5 @@ fi
 cd "$CONFIG_DIR"
 print_blue "启动 Backpack 交易机器人配置菜单..."
 
-# 使用超时命令，避免无限等待
-if command -v timeout &> /dev/null; then
-    # timeout命令可用，使用它来防止无限等待
-    timeout 1h python3 menu.py
-    exit_code=$?
-    if [ $exit_code -eq 124 ]; then
-        print_yellow "菜单会话超时，已自动退出"
-    fi
-else
-    # 直接运行Python脚本，依赖Python脚本内部的超时机制
-    python3 menu.py
-fi 
+# 直接运行Python脚本
+python3 menu.py 

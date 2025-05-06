@@ -29,6 +29,8 @@ FUNDING_THRESHOLD=${FUNDING_THRESHOLD:-"0.0001"}
 TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-""}
 AUTO_START=${AUTO_START:-"true"}
 USE_SYSTEMD=${USE_SYSTEMD:-"false"}
+# 是否自动进入配置菜单
+AUTO_CONFIG=${AUTO_CONFIG:-"true"}
 
 # 检查是否安装了必要的软件
 check_dependencies() {
@@ -173,6 +175,7 @@ download_project_files() {
     
     # 设置执行权限
     chmod +x backpack-config
+    chmod +x menu.py
     
     # 创建直接启动脚本，根据使用systemd还是PM2来创建不同的脚本
     if [ "$USE_SYSTEMD" = "true" ]; then
@@ -277,18 +280,7 @@ EOF
 create_config_file() {
     print_blue "创建配置文件..."
     
-    # 如果没有提供API密钥，询问用户
-    if [ -z "$API_KEY" ]; then
-        print_yellow "未提供API密钥。请输入Backpack API密钥 (按Enter跳过): "
-        read -r API_KEY
-    fi
-    
-    if [ -z "$API_SECRET" ]; then
-        print_yellow "未提供API密钥。请输入Backpack API密钥 (按Enter跳过): "
-        read -r API_SECRET
-    fi
-    
-    # 创建配置文件
+    # 创建默认配置文件（即使没有提供API密钥），让菜单程序能够正常运行
     cat > $HOME/.backpack_bot/config.ini << EOF
 [api]
 api_key = ${API_KEY}
@@ -343,7 +335,7 @@ create_config_command() {
     print_green "一键配置命令创建完成！"
 }
 
-# 自动启动交易机器人
+# 自动启动交易机器人（前提是已配置完成API密钥）
 auto_start_bot() {
     if [ "$AUTO_START" = "true" ] && [ -n "$API_KEY" ] && [ -n "$API_SECRET" ]; then
         print_blue "自动启动交易机器人..."
@@ -367,6 +359,19 @@ auto_start_bot() {
         if [ "$AUTO_START" = "true" ]; then
             print_yellow "未配置API密钥，无法自动启动交易机器人"
         fi
+    fi
+}
+
+# 自动打开配置菜单
+open_config_menu() {
+    if [ "$AUTO_CONFIG" = "true" ]; then
+        # 为确保alias可使用，需要先source shell配置文件
+        if [ -n "$SHELL_RC" ]; then
+            source "$SHELL_RC"
+        fi
+        print_blue "正在自动打开配置菜单..."
+        # 直接通过绝对路径启动配置菜单
+        cd $HOME/.backpack_bot && python3 menu.py
     fi
 }
 
@@ -413,6 +418,13 @@ main() {
         print_green "   backpack-start"
     fi
     print_green "========================================"
+    
+    # 自动打开配置菜单
+    if [ "$AUTO_CONFIG" = "true" ]; then
+        print_blue "即将自动打开配置菜单..."
+        sleep 2
+        open_config_menu
+    fi
 }
 
 # 执行主函数
